@@ -1,0 +1,347 @@
+{
+  "schema_version": "v1",
+  "purpose": "Mock ProfileRepository lookup results for V2 graph smoke tests. These records emulate a DB read keyed by actor_id.",
+  "lookup_key": "actor_id",
+  "records": [
+    {
+      "actor_id": "mock://profile/P00_new_user_uniform",
+      "profile_id": "P00_new_user_uniform",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 0,
+        "saved_theme_counts": {
+          "sea_coast": 0,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P00_new_user_uniform",
+        "label_ko": "신규 유저"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P01_one_trip_sea_probe",
+      "profile_id": "P01_one_trip_sea_probe",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 1,
+        "saved_theme_counts": {
+          "sea_coast": 1,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P01_one_trip_sea_probe",
+        "label_ko": "바다 1회 저장"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P02_one_trip_healing_probe",
+      "profile_id": "P02_one_trip_healing_probe",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 1,
+        "saved_theme_counts": {
+          "sea_coast": 0,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 1
+        },
+        "source_persona_id": "P02_one_trip_healing_probe",
+        "label_ko": "힐링 1회 저장"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P03_two_trips_repeated_sea",
+      "profile_id": "P03_two_trips_repeated_sea",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 2,
+        "saved_theme_counts": {
+          "sea_coast": 2,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P03_two_trips_repeated_sea",
+        "label_ko": "바다 2회 반복"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P04_two_trips_split_sea_healing",
+      "profile_id": "P04_two_trips_split_sea_healing",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 2,
+        "saved_theme_counts": {
+          "sea_coast": 1,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 1
+        },
+        "source_persona_id": "P04_two_trips_split_sea_healing",
+        "label_ko": "바다와 힐링 2회"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P05_three_trips_sea_threshold",
+      "profile_id": "P05_three_trips_sea_threshold",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 3,
+        "saved_theme_counts": {
+          "sea_coast": 3,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P05_three_trips_sea_threshold",
+        "label_ko": "바다 3회 저장"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P06_three_trips_nature_threshold",
+      "profile_id": "P06_three_trips_nature_threshold",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 3,
+        "saved_theme_counts": {
+          "sea_coast": 0,
+          "nature_trekking": 3,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P06_three_trips_nature_threshold",
+        "label_ko": "자연/트레킹 3회 저장"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P07_three_trips_balanced_three_themes",
+      "profile_id": "P07_three_trips_balanced_three_themes",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 3,
+        "saved_theme_counts": {
+          "sea_coast": 1,
+          "nature_trekking": 1,
+          "history_tradition": 1,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P07_three_trips_balanced_three_themes",
+        "label_ko": "3개 테마 균형"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P08_three_trips_multi_theme_even",
+      "profile_id": "P08_three_trips_multi_theme_even",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 3,
+        "saved_theme_counts": {
+          "sea_coast": 2,
+          "nature_trekking": 1,
+          "history_tradition": 1,
+          "art_sense": 1,
+          "healing_rest": 1
+        },
+        "source_persona_id": "P08_three_trips_multi_theme_even",
+        "label_ko": "멀티테마 고른 취향"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P09_five_trips_sea_lover",
+      "profile_id": "P09_five_trips_sea_lover",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 5,
+        "saved_theme_counts": {
+          "sea_coast": 5,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P09_five_trips_sea_lover",
+        "label_ko": "바다 선호 강함"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P10_five_trips_history_culture",
+      "profile_id": "P10_five_trips_history_culture",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 5,
+        "saved_theme_counts": {
+          "sea_coast": 0,
+          "nature_trekking": 0,
+          "history_tradition": 5,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P10_five_trips_history_culture",
+        "label_ko": "역사/전통 선호 강함"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P11_five_trips_art_sense",
+      "profile_id": "P11_five_trips_art_sense",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 5,
+        "saved_theme_counts": {
+          "sea_coast": 0,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 5,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P11_five_trips_art_sense",
+        "label_ko": "예술/감성 선호 강함"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P12_five_trips_healing_rest",
+      "profile_id": "P12_five_trips_healing_rest",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 5,
+        "saved_theme_counts": {
+          "sea_coast": 0,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 5
+        },
+        "source_persona_id": "P12_five_trips_healing_rest",
+        "label_ko": "힐링/휴양 선호 강함"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P13_five_trips_sea_healing",
+      "profile_id": "P13_five_trips_sea_healing",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 5,
+        "saved_theme_counts": {
+          "sea_coast": 3,
+          "nature_trekking": 0,
+          "history_tradition": 0,
+          "art_sense": 0,
+          "healing_rest": 2
+        },
+        "source_persona_id": "P13_five_trips_sea_healing",
+        "label_ko": "바다+힐링 복합 선호"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P14_five_trips_nature_history",
+      "profile_id": "P14_five_trips_nature_history",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 5,
+        "saved_theme_counts": {
+          "sea_coast": 0,
+          "nature_trekking": 3,
+          "history_tradition": 2,
+          "art_sense": 0,
+          "healing_rest": 0
+        },
+        "source_persona_id": "P14_five_trips_nature_history",
+        "label_ko": "자연+역사 복합 선호"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P15_five_trips_uniform",
+      "profile_id": "P15_five_trips_uniform",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 5,
+        "saved_theme_counts": {
+          "sea_coast": 1,
+          "nature_trekking": 1,
+          "history_tradition": 1,
+          "art_sense": 1,
+          "healing_rest": 1
+        },
+        "source_persona_id": "P15_five_trips_uniform",
+        "label_ko": "5회 저장 균등 취향"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P16_ten_trips_sea_healing_mature",
+      "profile_id": "P16_ten_trips_sea_healing_mature",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 10,
+        "saved_theme_counts": {
+          "sea_coast": 4,
+          "nature_trekking": 1,
+          "history_tradition": 1,
+          "art_sense": 1,
+          "healing_rest": 3
+        },
+        "source_persona_id": "P16_ten_trips_sea_healing_mature",
+        "label_ko": "장기 바다+힐링 선호"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P17_ten_trips_nature_history_mature",
+      "profile_id": "P17_ten_trips_nature_history_mature",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 10,
+        "saved_theme_counts": {
+          "sea_coast": 1,
+          "nature_trekking": 4,
+          "history_tradition": 3,
+          "art_sense": 1,
+          "healing_rest": 1
+        },
+        "source_persona_id": "P17_ten_trips_nature_history_mature",
+        "label_ko": "장기 자연+역사 선호"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P18_ten_trips_art_history_mature",
+      "profile_id": "P18_ten_trips_art_history_mature",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 10,
+        "saved_theme_counts": {
+          "sea_coast": 1,
+          "nature_trekking": 1,
+          "history_tradition": 3,
+          "art_sense": 4,
+          "healing_rest": 1
+        },
+        "source_persona_id": "P18_ten_trips_art_history_mature",
+        "label_ko": "장기 예술+역사 선호"
+      }
+    },
+    {
+      "actor_id": "mock://profile/P19_ten_trips_uniform_mature",
+      "profile_id": "P19_ten_trips_uniform_mature",
+      "profile_status": "found",
+      "lovv_user_profile": {
+        "saved_trip_count": 10,
+        "saved_theme_counts": {
+          "sea_coast": 2,
+          "nature_trekking": 2,
+          "history_tradition": 2,
+          "art_sense": 2,
+          "healing_rest": 2
+        },
+        "source_persona_id": "P19_ten_trips_uniform_mature",
+        "label_ko": "장기 균등 취향"
+      }
+    }
+  ]
+}
