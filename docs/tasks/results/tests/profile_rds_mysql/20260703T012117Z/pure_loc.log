@@ -1,0 +1,7 @@
+# pure LOC
+# utc=2026-07-03T01:22:01Z
+src/lovv_agent_v2/agents/profile/rds_mysql_tool.py 146
+src/lovv_agent_v2/agents/profile/rds_mysql_rows.py 169
+app/LovvAgentV2/lovv_agent_v2/agents/profile/rds_mysql_tool.py 146
+app/LovvAgentV2/lovv_agent_v2/agents/profile/rds_mysql_rows.py 169
+tests/v2/test_profile_rds_mysql_tool.py 150

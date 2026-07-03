@@ -1,0 +1,20 @@
+# pytest profile RDS + evidence
+# cwd=/d/bootcamp/workspace/project/03_final/04_Lovv-agent
+# utc=2026-07-03T01:21:31Z
+============================= test session starts =============================
+platform win32 -- Python 3.12.12, pytest-9.1.0, pluggy-1.6.0
+rootdir: D:\bootcamp\workspace\project\03_final\04_Lovv-agent
+configfile: pyproject.toml
+plugins: anyio-4.13.0, langsmith-0.8.15
+collected 10 items
+
+tests\v2\test_profile_rds_mysql_tool.py ...                              [ 30%]
+tests\v2\test_profile_evidence.py .......                                [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\_pytest\cacheprovider.py:469
+  D:\bootcamp\workspace\project\03_final\04_Lovv-agent\.venv\Lib\site-packages\_pytest\cacheprovider.py:469: PytestCacheWarning: could not create cache path D:\bootcamp\workspace\project\03_final\04_Lovv-agent\.pytest_cache\v\cache\nodeids: [WinError 5] 액세스가 거부되었습니다: 'D:\\bootcamp\\workspace\\project\\03_final\\04_Lovv-agent\\.pytest_cache\\v\\cache'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 10 passed, 1 warning in 0.07s ========================

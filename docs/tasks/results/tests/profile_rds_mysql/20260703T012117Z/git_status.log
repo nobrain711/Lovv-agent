@@ -1,0 +1,27 @@
+# git status snapshot
+# utc=2026-07-03T01:22:06Z
+ M docs/reports/v2/V2_00_INDEX.md
+ M docs/reports/v2/V2_22_PROFILE_CONFIG.md
+ M docs/reports/v2/V2_DECISIONS_LOG.md
+ M src/lovv_agent_v2/agents/profile/README.md
+?? .omo/
+?? .omo_last_profile_rds_result_dir
+?? app/LovvAgentV2/lovv_agent_v2/agents/profile/rds_mysql_rows.py
+?? app/LovvAgentV2/lovv_agent_v2/agents/profile/rds_mysql_tool.py
+?? app/LovvAgentV2/uv.lock
+?? docs/reports/AGENTCORE_CICD_FEASIBILITY_REVIEW_20260701.md
+?? docs/tasks/results/tests/agentv2_intent/20260702T045232Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T053104Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T054428Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T054716Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T055010Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T055206Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T060000Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T060529Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T060711Z/
+?? docs/tasks/results/tests/agentv2_intent/20260702T060853Z/
+?? docs/tasks/results/tests/profile_agentcore/20260702T031252Z/
+?? docs/tasks/results/tests/profile_rds_mysql/
+?? src/lovv_agent_v2/agents/profile/rds_mysql_rows.py
+?? src/lovv_agent_v2/agents/profile/rds_mysql_tool.py
+?? tests/v2/test_profile_rds_mysql_tool.py
