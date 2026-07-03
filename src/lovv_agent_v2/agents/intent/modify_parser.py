@@ -137,6 +137,9 @@ def _modify_base(request: Mapping[str, Any], raw_query: str) -> dict[str, Any]:
             request.get("itineraryRevision", request.get("itinerary_revision")),
             "itinerary_revision",
         ),
+        "destination_id": _optional_text(
+            request.get("destinationId", request.get("destination_id")),
+        ),
         "raw_modify_query": raw_query,
     }
 

@@ -124,6 +124,8 @@ def _modify_clarification_payload(clarification: Mapping[str, Any]) -> dict[str,
 
 
 def _planner_output(state: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    if _is_pending_place_replace_notice(state):
+        return None
     planner = state.get("planner")
     if isinstance(planner, Mapping):
         planner_output = planner.get("planner_output")
@@ -191,7 +193,23 @@ def _unsupported_conditions(state: Mapping[str, Any]) -> tuple[str, ...]:
     modify_intent = intent.get("modify_intent")
     if isinstance(modify_intent, Mapping):
         _extend_texts(values, modify_intent.get("unsupported_reasons"))
+        if _is_pending_place_replace_notice(state):
+            values.append("place_replace_not_implemented")
     return tuple(values)
+
+
+def _is_pending_place_replace_notice(state: Mapping[str, Any]) -> bool:
+    intent = state.get("intent")
+    if not isinstance(intent, Mapping):
+        return False
+    modify_intent = intent.get("modify_intent")
+    if not isinstance(modify_intent, Mapping):
+        return False
+    return (
+        modify_intent.get("status") == "ok"
+        and modify_intent.get("kind") == "slot_replace"
+        and modify_intent.get("routing_hint") == "planner_apply_edit"
+    )
 
 
 def _extend_texts(target: list[str], value: Any) -> None:

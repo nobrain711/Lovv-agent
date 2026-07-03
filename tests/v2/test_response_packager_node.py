@@ -212,6 +212,52 @@ def test_response_packager_node_packages_modify_unsupported_notice() -> None:
     assert "trip_length_change" in payload["explainability"]["userNotice"]
 
 
+def test_response_packager_does_not_reuse_stale_planner_for_slot_replace_notice() -> None:
+    result = response_packager_node(
+        {
+            "request": {
+                "entryType": "modify",
+                "threadId": "thread-001",
+                "itineraryRevision": "rev-001",
+                "rawModifyQuery": "첫 장소 말고 조용한 숲길로 바꿔줘.",
+            },
+            "intent": {
+                "intent_type": "modification",
+                "modify_intent": {
+                    "status": "ok",
+                    "kind": "slot_replace",
+                    "routing_hint": "planner_apply_edit",
+                    "edit_ops": [{"op_id": "op-1"}],
+                },
+            },
+            "planner": {
+                "planner_output": {
+                    "itinerary": [
+                        {
+                            "day": 1,
+                            "slot": "morning",
+                            "placeId": "attraction#old",
+                            "title": "이전 장소",
+                        },
+                    ],
+                    "recommendation_reasons": (),
+                    "itinerary_flow_reason": "이전 일정입니다.",
+                    "external_links": {},
+                    "confidence": 0.5,
+                    "user_notice": (),
+                    "validation_result": {"planner_status_gate": "ok"},
+                },
+            },
+        },
+    )
+
+    payload = result["response"]["response_payload"]
+    assert payload["itinerary"]["days"] == []
+    assert payload["explainability"]["unsupportedConditions"] == (
+        "place_replace_not_implemented",
+    )
+
+
 def test_response_packager_adds_notice_for_generation_unsupported_conditions() -> None:
     response = package_recommendation_response(
         planner_output={

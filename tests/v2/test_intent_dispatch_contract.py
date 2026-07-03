@@ -131,6 +131,7 @@ def test_intent_node_builds_slot_replace_modify_intent() -> None:
                 "entryType": "modify",
                 "threadId": "thread-001",
                 "itineraryRevision": "rev-001",
+                "destinationId": "KR-41-1",
                 "rawModifyQuery": "1일차 오후 이이 유적 말고, 조용히 산책하기 좋은 자연 쪽으로 바꿔줘.",
                 "currentOrder": [
                     {
@@ -161,6 +162,7 @@ def test_intent_node_builds_slot_replace_modify_intent() -> None:
     modify_intent = output["intent"]["modify_intent"]
     assert modify_intent["status"] == "ok"
     assert modify_intent["kind"] == "slot_replace"
+    assert modify_intent["destination_id"] == "KR-41-1"
     assert modify_intent["routing_hint"] == "planner_apply_edit"
     assert modify_intent["edit_ops"][0]["target"] == {
         "item_id": "item-2",

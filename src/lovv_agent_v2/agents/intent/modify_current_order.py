@@ -9,10 +9,10 @@ def current_order(
     state: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any], ...]:
     for value in (
+        request.get("currentOrder", request.get("current_order")),
         state.get("currentOrder", state.get("current_order")),
         _planner_current_order(state),
         _response_current_order(state),
-        request.get("currentOrder", request.get("current_order")),
     ):
         order = _mapping_sequence(value)
         if order:

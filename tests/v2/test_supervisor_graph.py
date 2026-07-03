@@ -215,6 +215,33 @@ def test_supervisor_routes_modify_unsupported_to_response_packager() -> None:
     assert result["routing"]["needs_clarification"] is False
 
 
+def test_supervisor_routes_slot_replace_notice_before_stale_planner_output() -> None:
+    result = supervisor_node(
+        {
+            "intent": {
+                "intent_type": "modification",
+                "status": "ok",
+                "modify_intent": {
+                    "status": "ok",
+                    "kind": "slot_replace",
+                    "routing_hint": "planner_apply_edit",
+                    "edit_ops": [{"op_id": "op-1"}],
+                },
+            },
+            "planner": {
+                "planner_output": {"itinerary": [{"title": "이전 장소"}]},
+                "validation_result": {"planner_status_gate": "ok"},
+            },
+            "response": {
+                "response_status": "modification_pending",
+                "response_payload": {"recommendationId": "REQ-OLD"},
+            },
+        },
+    )
+
+    assert result["routing"]["next_node"] == "response_packager"
+
+
 def test_supervisor_routes_city_change_modify_to_planner_before_stale_response() -> None:
     result = supervisor_node(
         {

@@ -50,14 +50,14 @@ def _next_node(state: Mapping[str, Any], *, reason_code: str | None) -> str:
         return END_ROUTE if _has_profile_update(state) else "profile"
     if _modify_intent_routes_direct_anchor_planner(state):
         return "planner"
+    if _modify_intent_needs_response(state):
+        return "response_packager"
     if _modify_intent_has_planner_output(state):
         if _has_current_modify_response_payload(state):
             return END_ROUTE
         return "explain_itinerary" if not _has_itinerary_explanation(state) else "response_packager"
     if _has_response_payload(state):
         return END_ROUTE
-    if _modify_intent_needs_response(state):
-        return "response_packager"
     if reason_code is not None:
         return "response_packager"
     if not _has_profile_result(state):
@@ -125,7 +125,7 @@ def _modify_intent_needs_response(state: Mapping[str, Any]) -> bool:
     if status in {"needs_clarification", "unsupported"}:
         return True
     routing_hint = modify_intent.get("routing_hint")
-    return routing_hint in {"response_packager_wait_user", "response_packager_notice"}
+    return routing_hint in {"planner_apply_edit", "response_packager_wait_user", "response_packager_notice"}
 
 
 def _modify_intent_routes_direct_anchor_planner(state: Mapping[str, Any]) -> bool:

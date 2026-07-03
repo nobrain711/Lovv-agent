@@ -107,6 +107,9 @@ def validate_modify_prompt_output(
             request.get("itineraryRevision", request.get("itinerary_revision")),
             "itinerary_revision",
         ),
+        "destination_id": _optional_text(
+            request.get("destinationId", request.get("destination_id")),
+        ),
         "raw_modify_query": raw_query,
         "kind": kind,
         "edit_ops": normalize_prompt_edit_ops(
@@ -232,3 +235,10 @@ def _required_text(value: Any, field_name: str) -> str:
     if not normalized:
         raise SchemaValidationError(f"{field_name} must be non-empty")
     return normalized
+
+
+def _optional_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
