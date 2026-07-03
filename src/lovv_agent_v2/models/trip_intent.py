@@ -60,7 +60,25 @@ def trip_intent_from_mapping(payload: Mapping[str, Any]) -> dict[str, Any] | Non
     _copy_optional(
         trip_intent,
         payload,
-        ("theme_weights", "city_key", "ddb_pk", "destination_label", "province"),
+        (
+            "theme_weights",
+            "city_key",
+            "ddb_pk",
+            "destination_label",
+            "province",
+            "preferred_theme_ids",
+            "disliked_theme_ids",
+            "preferred_region_ids",
+            "disliked_region_ids",
+            "preferred_region_spans",
+            "disliked_region_spans",
+            "unresolved_region_spans",
+            "preferred_region_names",
+            "disliked_region_names",
+            "needs_clarification",
+            "clarifying_question",
+            "contradiction_reasons",
+        ),
     )
     return trip_intent
 
@@ -85,7 +103,25 @@ def city_select_input_from_trip_intent(trip_intent: Mapping[str, Any]) -> dict[s
     _copy_optional(
         city_input,
         trip_intent,
-        ("theme_weights", "city_key", "ddb_pk", "destination_label", "province"),
+        (
+            "theme_weights",
+            "city_key",
+            "ddb_pk",
+            "destination_label",
+            "province",
+            "preferred_theme_ids",
+            "disliked_theme_ids",
+            "preferred_region_ids",
+            "disliked_region_ids",
+            "preferred_region_spans",
+            "disliked_region_spans",
+            "unresolved_region_spans",
+            "preferred_region_names",
+            "disliked_region_names",
+            "needs_clarification",
+            "clarifying_question",
+            "contradiction_reasons",
+        ),
     )
     return city_input
 

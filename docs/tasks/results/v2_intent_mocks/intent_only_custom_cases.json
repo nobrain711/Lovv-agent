@@ -1,0 +1,119 @@
+{
+  "cases": [
+    {
+      "case_id": "custom_create_history_quiet_walk",
+      "source": "inline",
+      "state": {
+        "request": {
+          "entryType": "create",
+          "country": "KR",
+          "travel_month": 10,
+          "travel_year": 2026,
+          "trip_type": "2d1n",
+          "themes": [
+            "역사·전통"
+          ],
+          "include_festivals": false,
+          "naturalLanguageQuery": "강원도는 피하고 경북의 조용한 역사 골목을 걸어서 보고 싶어."
+        }
+      }
+    },
+    {
+      "case_id": "custom_modify_multi_replace",
+      "source": "inline",
+      "state": {
+        "request": {
+          "entryType": "modify",
+          "threadId": "thread-smoke",
+          "itineraryRevision": "rev-smoke",
+          "rawModifyQuery": "1일차 오전은 조용한 숲길로 바꾸고 1일차 오후는 실내 전시 공간으로 바꿔줘.",
+          "currentOrder": [
+            {
+              "itemId": "item-1",
+              "contentId": "attraction#morning",
+              "itemType": "attraction",
+              "day": 1,
+              "order": 1,
+              "title": "오전 장소",
+              "isSeed": false,
+              "theme": "바다·해안"
+            },
+            {
+              "itemId": "item-2",
+              "contentId": "attraction#afternoon",
+              "itemType": "attraction",
+              "day": 1,
+              "order": 2,
+              "title": "오후 장소",
+              "isSeed": false,
+              "theme": "역사·전통"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "custom_modify_seed_conflict",
+      "source": "inline",
+      "state": {
+        "request": {
+          "entryType": "modify",
+          "threadId": "thread-smoke",
+          "itineraryRevision": "rev-smoke",
+          "rawModifyQuery": "1일차 오전 핵심 유적 말고 자연 산책지로 바꿔줘.",
+          "currentOrder": [
+            {
+              "itemId": "item-seed",
+              "contentId": "attraction#seed",
+              "itemType": "attraction",
+              "day": 1,
+              "order": 1,
+              "title": "핵심 유적",
+              "isSeed": true,
+              "theme": "역사·전통"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "custom_clarify_festival_none",
+      "source": "inline",
+      "state": {
+        "request": {
+          "entryType": "clarify",
+          "threadId": "thread-smoke",
+          "selectedOptionId": "continue_without_festival"
+        },
+        "memory": {
+          "pending_clarification": {
+            "reason_code": "festival_none",
+            "prompt": "축제 없이 계속할까요?",
+            "options": [
+              {
+                "option_id": "continue_without_festival",
+                "label": "축제 없이 계속",
+                "apply": {
+                  "include_festivals": false
+                },
+                "then": "rerun_discovery"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case_id": "custom_confirm_itinerary",
+      "source": "inline",
+      "state": {
+        "request": {
+          "entryType": "confirm",
+          "threadId": "thread-smoke",
+          "recommendationId": "rec-smoke",
+          "itineraryRevision": "rev-smoke"
+        }
+      }
+    }
+  ]
+}

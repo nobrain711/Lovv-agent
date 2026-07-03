@@ -71,7 +71,12 @@ Intent는 도시 label, `city_key`, `ddb_pk` 매핑을 프론트에 요구하지
 - `disliked_theme_ids`
 - `preferred_region_ids`
 - `disliked_region_ids`
+- `preferred_region_spans`
+- `disliked_region_spans`
+- `unresolved_region_spans`
 - `contradiction_reasons`
+
+`preferred_region_ids` / `disliked_region_ids`는 legacy field name을 유지하지만 값은 V2 `city_id` 형식의 `KR-*`만 담는다. LLM은 city id를 생성하지 않고 `preferred_region_spans` / `disliked_region_spans` 같은 짧은 원문 지역명만 보조 추출한다. backend는 city identity map으로 span을 canonicalize하며, `동구 (대구광역시)` 같은 qualifier와 `시/군/구` suffix를 처리한다. 매칭 실패나 단독 `동구`처럼 ambiguous한 span은 id로 승격하지 않고 `unresolved_region_spans`에 둔다.
 
 prompt runtime이 있을 때 보강되는 항목:
 

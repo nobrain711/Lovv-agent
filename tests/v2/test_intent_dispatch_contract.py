@@ -173,8 +173,13 @@ def test_intent_node_builds_slot_replace_modify_intent() -> None:
     }
     assert (
         modify_intent["edit_ops"][0]["condition"]["replacement_query"]
+        == "조용하고 한적한 숲길을 천천히 걸을 수 있는 자연 산책 장소."
+    )
+    assert (
+        modify_intent["edit_ops"][0]["condition"]["replacement_query_raw"]
         == "조용히 산책하기 좋은 자연"
     )
+    assert modify_intent["edit_ops"][0]["condition"]["query_required"] is True
     assert modify_intent["edit_ops"][0]["condition"]["theme"] == "자연·트레킹"
     assert modify_intent["edit_ops"][0]["seed_policy"] == {
         "target_is_seed": False,

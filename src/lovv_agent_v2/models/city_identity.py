@@ -56,6 +56,16 @@ class CityIdentityMap:
             raise SchemaValidationError("unknown city identity")
         return identity
 
+    def identities(self) -> tuple[CityIdentity, ...]:
+        seen: set[str] = set()
+        result: list[CityIdentity] = []
+        for identity in self._by_key.values():
+            if identity.city_id in seen:
+                continue
+            seen.add(identity.city_id)
+            result.append(identity)
+        return tuple(result)
+
     def _register(self, identity: CityIdentity) -> None:
         for value in (
             identity.city_id,

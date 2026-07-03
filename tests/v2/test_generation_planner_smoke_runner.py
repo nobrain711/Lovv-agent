@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -38,9 +39,8 @@ def test_build_initial_state_wraps_generation_intent_output() -> None:
 
     assert state["request"]["request_id"] == "case-1"
     assert state["request"]["themes"] == ("바다·해안",)
-    assert state["request"]["congestion_pref"] == "quiet"
-    assert state["request"]["transport_pref"] == "walk"
-    assert state["intent"]["intent_output"]["cleaned_raw_query"] == "조용한 바다"
+    assert state["request"]["raw_query"] == "조용한 바다"
+    assert "intent" not in state
 
 
 def test_build_initial_state_accepts_mock_profile_record() -> None:
@@ -76,6 +76,39 @@ def test_invoke_harness_uses_smoke_thread_id() -> None:
     assert result == {"ok": True}
     assert harness.payloads == [state]
     assert harness.configs == [{"configurable": {"thread_id": "v2-smoke:case-1"}}]
+
+
+def test_build_smoke_harness_can_use_mock_contract_nodes(monkeypatch: Any) -> None:
+    runner = _load_runner_module()
+    monkeypatch.setattr(runner, "build_live_harness", lambda: "live")
+    monkeypatch.setattr(runner, "build_mock_live_harness", lambda: "mock")
+
+    assert runner.build_smoke_harness(use_mock_contract_nodes=True) == "mock"
+    assert runner.build_smoke_harness(use_mock_contract_nodes=False) == "live"
+
+
+def test_summarize_result_uses_interrupt_payload_as_response() -> None:
+    runner = _load_runner_module()
+
+    summary = runner.summarize_result(
+        "case-wait",
+        Path("case-wait.json"),
+        {
+            "__interrupt__": [
+                SimpleNamespace(
+                    value={
+                        "clarification": {"reasonCode": "festival_none"},
+                    },
+                ),
+            ],
+            "festival_gate": {
+                "result": {"status": "needs_clarification", "tier": "none"},
+            },
+        },
+    )
+
+    assert summary["response_status"] == "END_WAIT_USER"
+    assert summary["response_payload"]["clarification"]["reasonCode"] == "festival_none"
 
 
 class RecordingHarness:

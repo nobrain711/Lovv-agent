@@ -106,7 +106,9 @@ Everything else is backlog unless explicitly listed below.
     "resolution": "exact"
   },
   "condition": {
-    "replacement_query": "조용히 산책하기 좋은 자연",
+    "replacement_query": "조용하고 한적한 자연 산책로를 천천히 걸을 수 있는 장소.",
+    "replacement_query_raw": "조용히 산책하기 좋은 자연",
+    "query_required": true,
     "theme": "자연·트레킹",
     "mood": "quiet",
     "place_type": "walk",
@@ -131,10 +133,12 @@ Everything else is backlog unless explicitly listed below.
 4. `condition.replacement_query` is nullable.
    - `null`: simple replacement. Planner should use the target slot context, original item theme/subtype, and current itinerary constraints.
    - string: query-constrained replacement. Planner should use this as the slot-local retrieval query.
-5. `condition` must describe only the replacement slot, not a full itinerary rewrite.
-6. `avoid_content_ids` should include the replaced item so Planner does not immediately pick the same place unless no alternative exists and policy allows fallback.
-7. Single vs multiple replace is represented only by `edit_ops.length`.
-8. All `edit_ops` in V2.0 use `op="REPLACE"`. There is no `ADD`, `REMOVE`, `MOVE`, or reorder op.
+5. `condition.replacement_query_raw` preserves the short phrase extracted from the user, while `replacement_query` is a HyDE-style retrieval sentence.
+6. `condition.query_required=false` means no separate slot-local retrieval query was requested; then both `replacement_query` and `replacement_query_raw` must be `null`.
+7. `condition` must describe only the replacement slot, not a full itinerary rewrite.
+8. `avoid_content_ids` should include the replaced item so Planner does not immediately pick the same place unless no alternative exists and policy allows fallback.
+9. Single vs multiple replace is represented only by `edit_ops.length`.
+10. All `edit_ops` in V2.0 use `op="REPLACE"`. There is no `ADD`, `REMOVE`, `MOVE`, or reorder op.
 
 ---
 
@@ -279,6 +283,8 @@ Output:
       },
       "condition": {
         "replacement_query": null,
+        "replacement_query_raw": null,
+        "query_required": false,
         "theme": null,
         "mood": null,
         "place_type": null,
@@ -298,7 +304,7 @@ Output:
 }
 ```
 
-Planner interprets `replacement_query=null` as "replace using the original slot context".
+Planner interprets `replacement_query=null` and `query_required=false` as "replace using the original slot context".
 
 ### 8.2 Single Replace With New Query
 
@@ -333,7 +339,9 @@ Output:
         "resolution": "exact"
       },
       "condition": {
-        "replacement_query": "조용히 산책하기 좋은 자연",
+        "replacement_query": "조용하고 한적한 자연 산책로를 천천히 걸을 수 있는 장소.",
+        "replacement_query_raw": "조용히 산책하기 좋은 자연",
+        "query_required": true,
         "theme": "자연·트레킹",
         "mood": "quiet",
         "place_type": "walk",
@@ -387,6 +395,8 @@ Output:
       },
       "condition": {
         "replacement_query": null,
+        "replacement_query_raw": null,
+        "query_required": false,
         "theme": null,
         "mood": null,
         "place_type": null,
@@ -411,7 +421,9 @@ Output:
         "resolution": "exact"
       },
       "condition": {
-        "replacement_query": "바다 전망 있는 곳",
+        "replacement_query": "탁 트인 바다 전망을 감상할 수 있는 해안 장소.",
+        "replacement_query_raw": "바다 전망 있는 곳",
+        "query_required": true,
         "theme": "바다·해안",
         "mood": null,
         "place_type": null,

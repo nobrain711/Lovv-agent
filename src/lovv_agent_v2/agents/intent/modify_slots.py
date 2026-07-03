@@ -4,6 +4,9 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from lovv_agent_v2.agents.intent.modify_replacement_query import (
+    replacement_query_fields,
+)
 from lovv_agent_v2.agents.intent.parser import parse_initial_query
 
 
@@ -22,6 +25,25 @@ def slot_replace_operation(
     return _operation_for_item(raw_query, matches[0])
 
 
+def slot_replace_operations(
+    raw_query: str,
+    current_order_items: tuple[Mapping[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    segments = _targeted_segments(raw_query)
+    if len(segments) <= 1:
+        operation = slot_replace_operation(raw_query, current_order_items)
+        return () if operation is None else (operation,)
+    operations: list[dict[str, Any]] = []
+    for segment in segments:
+        operation = slot_replace_operation(segment, current_order_items)
+        if operation is None:
+            return ()
+        if operation["target"]["resolution"] == "ambiguous":
+            return (operation,)
+        operations.append(_operation_with_id(operation, len(operations) + 1))
+    return tuple(operations)
+
+
 def public_operation(operation: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "op_id": operation["op_id"],
@@ -29,6 +51,13 @@ def public_operation(operation: Mapping[str, Any]) -> dict[str, Any]:
         "target": operation["target"],
         "condition": operation["condition"],
         "seed_policy": operation["seed_policy"],
+    }
+
+
+def _operation_with_id(operation: Mapping[str, Any], index: int) -> dict[str, Any]:
+    return {
+        **operation,
+        "op_id": f"op-{index}",
     }
 
 
@@ -42,6 +71,18 @@ def current_order(
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _targeted_segments(raw_query: str) -> tuple[str, ...]:
+    matches = tuple(re.finditer(r"\d+일차\s*(?:오전|오후|\d+번째)", raw_query))
+    if len(matches) <= 1:
+        return (raw_query,)
+    return tuple(
+        raw_query[match.start() : matches[index + 1].start()].strip(" .,。")
+        if index + 1 < len(matches)
+        else raw_query[match.start() :].strip(" .,。")
+        for index, match in enumerate(matches)
+    )
 
 
 def avoid_city_ids(current_order_items: tuple[Mapping[str, Any], ...]) -> list[str]:
@@ -85,7 +126,8 @@ def _operation_for_item(raw_query: str, item: Mapping[str, Any]) -> dict[str, An
         "target_text": _target_text(raw_query, item),
         "resolution": "exact",
     }
-    replacement_query = _replacement_query(raw_query)
+    replacement_query = _replacement_query(raw_query, item)
+    query_fields = replacement_query_fields(replacement_query)
     preference = parse_initial_query(replacement_query or "")
     theme = preference.active_theme_labels[0] if preference.active_theme_labels else None
     content_id = target["content_id"]
@@ -94,7 +136,7 @@ def _operation_for_item(raw_query: str, item: Mapping[str, Any]) -> dict[str, An
         "op": "REPLACE",
         "target": target,
         "condition": {
-            "replacement_query": replacement_query,
+            **query_fields,
             "theme": theme,
             "mood": "quiet" if "조용" in raw_query else None,
             "place_type": "walk" if "산책" in raw_query else None,
@@ -129,17 +171,44 @@ def _target_option(item: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _replacement_query(raw_query: str) -> str | None:
+def _replacement_query(raw_query: str, item: Mapping[str, Any]) -> str | None:
     if "말고" not in raw_query:
-        return None
+        return _replacement_query_without_negative_target(raw_query, item)
     _, replacement = raw_query.split("말고", 1)
     normalized = replacement.strip(" .,。")
     normalized = re.sub(
-        r"(쪽으로|으로|로)?\s*(바꿔줘|바꿔|변경해줘|교체해줘)\.?$",
+        r"(쪽으로|으로|로)?\s*(바꾸고|바꿔줘|바꿔|변경해줘|교체해줘)\.?$",
         "",
         normalized,
     )
     normalized = normalized.strip(" .,。")
+    return normalized or None
+
+
+def _replacement_query_without_negative_target(
+    raw_query: str,
+    item: Mapping[str, Any],
+) -> str | None:
+    normalized = re.sub(
+        r"^\s*\d+일차\s*(오전|오후|\d+번째)?\s*(장소|코스|일정)?\s*(은|는|을|를|만)?\s*",
+        "",
+        raw_query,
+    )
+    normalized = re.sub(
+        r"(쪽으로|으로|로)?\s*(바꾸고|바꿔줘|바꿔|변경해줘|교체해줘)\.?$",
+        "",
+        normalized.strip(" .,。"),
+    )
+    title = _item_title(item)
+    if title is not None:
+        normalized = re.sub(
+            rf"^\s*{re.escape(title)}\s*(은|는|을|를|만)?\s*",
+            "",
+            normalized,
+        )
+    normalized = normalized.strip(" .,。")
+    if normalized in {"다른 곳", "다른 장소", "다른 코스"}:
+        return None
     return normalized or None
 
 

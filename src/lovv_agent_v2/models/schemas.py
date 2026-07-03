@@ -240,6 +240,18 @@ class CitySelectInput:
     city_key: str | None = None
     ddb_pk: str | None = None
     destination_label: str | None = None
+    preferred_theme_ids: tuple[str, ...] = ()
+    disliked_theme_ids: tuple[str, ...] = ()
+    preferred_region_ids: tuple[str, ...] = ()
+    disliked_region_ids: tuple[str, ...] = ()
+    preferred_region_spans: tuple[str, ...] = ()
+    disliked_region_spans: tuple[str, ...] = ()
+    unresolved_region_spans: tuple[str, ...] = ()
+    preferred_region_names: tuple[str, ...] = ()
+    disliked_region_names: tuple[str, ...] = ()
+    needs_clarification: bool = False
+    clarifying_question: str | None = None
+    contradiction_reasons: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "country", _required_text(self.country, "country"))
@@ -309,6 +321,66 @@ class CitySelectInput:
             "destination_label",
             _optional_text(self.destination_label, "destination_label"),
         )
+        object.__setattr__(
+            self,
+            "preferred_theme_ids",
+            _string_tuple(self.preferred_theme_ids, "preferred_theme_ids"),
+        )
+        object.__setattr__(
+            self,
+            "disliked_theme_ids",
+            _string_tuple(self.disliked_theme_ids, "disliked_theme_ids"),
+        )
+        object.__setattr__(
+            self,
+            "preferred_region_ids",
+            _string_tuple(self.preferred_region_ids, "preferred_region_ids"),
+        )
+        object.__setattr__(
+            self,
+            "disliked_region_ids",
+            _string_tuple(self.disliked_region_ids, "disliked_region_ids"),
+        )
+        object.__setattr__(
+            self,
+            "preferred_region_spans",
+            _string_tuple(self.preferred_region_spans, "preferred_region_spans"),
+        )
+        object.__setattr__(
+            self,
+            "disliked_region_spans",
+            _string_tuple(self.disliked_region_spans, "disliked_region_spans"),
+        )
+        object.__setattr__(
+            self,
+            "unresolved_region_spans",
+            _string_tuple(self.unresolved_region_spans, "unresolved_region_spans"),
+        )
+        object.__setattr__(
+            self,
+            "preferred_region_names",
+            _string_tuple(self.preferred_region_names, "preferred_region_names"),
+        )
+        object.__setattr__(
+            self,
+            "disliked_region_names",
+            _string_tuple(self.disliked_region_names, "disliked_region_names"),
+        )
+        object.__setattr__(
+            self,
+            "needs_clarification",
+            _bool(self.needs_clarification, "needs_clarification"),
+        )
+        object.__setattr__(
+            self,
+            "clarifying_question",
+            _optional_text(self.clarifying_question, "clarifying_question"),
+        )
+        object.__setattr__(
+            self,
+            "contradiction_reasons",
+            _string_tuple(self.contradiction_reasons, "contradiction_reasons"),
+        )
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "CitySelectInput":
@@ -367,6 +439,42 @@ class CitySelectInput:
                 "destination_label",
                 "destinationLabel",
                 default=None,
+            ),
+            preferred_theme_ids=_mapping_get(payload, "preferred_theme_ids", default=()),
+            disliked_theme_ids=_mapping_get(payload, "disliked_theme_ids", default=()),
+            preferred_region_ids=_mapping_get(payload, "preferred_region_ids", default=()),
+            disliked_region_ids=_mapping_get(payload, "disliked_region_ids", default=()),
+            preferred_region_spans=_mapping_get(payload, "preferred_region_spans", default=()),
+            disliked_region_spans=_mapping_get(payload, "disliked_region_spans", default=()),
+            unresolved_region_spans=_mapping_get(
+                payload,
+                "unresolved_region_spans",
+                default=(),
+            ),
+            preferred_region_names=_mapping_get(
+                payload,
+                "preferred_region_names",
+                default=(),
+            ),
+            disliked_region_names=_mapping_get(
+                payload,
+                "disliked_region_names",
+                default=(),
+            ),
+            needs_clarification=_mapping_get(
+                payload,
+                "needs_clarification",
+                default=False,
+            ),
+            clarifying_question=_mapping_get(
+                payload,
+                "clarifying_question",
+                default=None,
+            ),
+            contradiction_reasons=_mapping_get(
+                payload,
+                "contradiction_reasons",
+                default=(),
             ),
         )
 

@@ -57,7 +57,7 @@ Intent는 create request를 두 종류로 나누어 다룬다.
 현재 code parser가 추출하는 항목:
 
 - preferred/disliked theme ids
-- preferred/disliked region ids
+- preferred/disliked region ids (`KR-*` city_id only)
 - contradiction reasons
 
 LLM structured output이 추출해야 하는 항목:
@@ -68,7 +68,7 @@ LLM structured output이 추출해야 하는 항목:
 - `congestion_pref`: `quiet | vibrant | neutral`
 - `unsupported_conditions`
 - preferred/disliked theme ids
-- preferred/disliked region ids
+- preferred/disliked region ids (`KR-*` city_id only)
 
 LLM이 사실상 재결정하지 말아야 하는 항목:
 
@@ -111,9 +111,12 @@ LLM이 사실상 재결정하지 말아야 하는 항목:
   "preferred_theme_ids": ["sea_coast"],
   "disliked_theme_ids": [],
   "preferred_region_ids": [],
-  "disliked_region_ids": ["gyeongju"],
+  "disliked_region_ids": ["KR-47-130"],
+  "preferred_region_spans": [],
+  "disliked_region_spans": ["경주"],
+  "unresolved_region_spans": [],
   "preferred_region_names": [],
-  "disliked_region_names": ["경주"],
+  "disliked_region_names": ["경주시"],
   "needs_clarification": false,
   "clarifying_question": null,
   "contradiction_reasons": []

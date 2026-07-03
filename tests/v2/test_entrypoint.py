@@ -118,7 +118,7 @@ def test_handle_v2_invocation_plumbing(
     # 1. Payload가 제대로 분리되었는지
     payload = args[0]
     assert payload["request"]["country"] == "KR"
-    assert payload["intent"]["city_select_input"]["travel_month"] == 10
+    assert "intent" not in payload
     assert payload["profile"]["profile_record"]["actor_id"] == "actor-abc"
     assert payload["profile"]["saved_itinerary_evidence_audit"]["cache_status"] == "hit"
     assert fake_resolver.calls[0][1:] == ("actor-abc", "session-xyz")
@@ -273,11 +273,10 @@ def test_extract_graph_payload_wraps_public_recommendation_request() -> None:
 
     payload = extract_graph_payload(event, request_id="REQ-PUBLIC")
 
-    city_input = payload["intent"]["city_select_input"]
     assert payload["request"]["request_id"] == "REQ-PUBLIC"
-    assert city_input["active_required_themes"] == ("바다·해안",)
-    assert city_input["cleaned_raw_query"] == "조용한 바다 당일치기"
-    assert city_input["execution_mode"] == "city_discovery"
+    assert payload["request"]["themes"] == ("바다·해안",)
+    assert payload["request"]["raw_query"] == "조용한 바다 당일치기"
+    assert "intent" not in payload
 
 
 def test_extract_graph_payload_uses_natural_language_query_textfield() -> None:
@@ -287,7 +286,7 @@ def test_extract_graph_payload_uses_natural_language_query_textfield() -> None:
         "travelMonth": 10,
         "travelYear": 2026,
         "tripType": "2d1n",
-        "themes": [],
+        "themes": ["역사·전통"],
         "includeFestivals": False,
         "naturalLanguageQuery": "속초 말고 안동이나 경주처럼 역사 있는 곳 추천해줘.",
         "softPreferenceQuery": "차분하게 둘러보고 싶어.",
@@ -295,8 +294,25 @@ def test_extract_graph_payload_uses_natural_language_query_textfield() -> None:
 
     payload = extract_graph_payload(event, request_id="REQ-TEXTFIELD")
 
-    city_input = payload["intent"]["city_select_input"]
     assert payload["request"]["raw_query"] == event["naturalLanguageQuery"]
     assert payload["request"]["soft_preference_query"] == event["softPreferenceQuery"]
-    assert city_input["cleaned_raw_query"] == event["naturalLanguageQuery"]
-    assert city_input["soft_preference_query"] == event["softPreferenceQuery"]
+    assert "intent" not in payload
+
+
+def test_extract_graph_payload_rejects_create_request_without_themes() -> None:
+    event = {
+        "entryType": "create",
+        "country": "KR",
+        "travelMonth": 10,
+        "travelYear": 2026,
+        "tripType": "2d1n",
+        "includeFestivals": False,
+        "naturalLanguageQuery": "경주 말고 조용한 바다 여행지를 추천해줘.",
+    }
+
+    try:
+        extract_graph_payload(event, request_id="REQ-INTENT-E2E")
+    except ValueError as exc:
+        assert "recommendations request" in str(exc)
+    else:
+        raise AssertionError("theme-less create request must be rejected")

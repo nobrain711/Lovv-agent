@@ -4,6 +4,11 @@ import json
 from collections.abc import Mapping
 from typing import Any, Final
 
+from lovv_agent_v2.agents.intent.modify_prompt_normalizer import (
+    normalize_prompt_city_change,
+    normalize_prompt_edit_ops,
+)
+from lovv_agent_v2.agents.intent.prompts.modify_intent import MODIFY_PROMPT_TEXT
 from lovv_agent_v2.infra.adapters.bedrock_converse import (
     RuntimeInvoker,
     build_structured_converse_request,
@@ -12,22 +17,6 @@ from lovv_agent_v2.infra.adapters.bedrock_converse import (
 from lovv_agent_v2.models.schemas import SchemaValidationError
 
 MODIFY_PROMPT_SCHEMA_NAME: Final = "lovv_v2_modify_intent_output"
-MODIFY_PROMPT_TEXT: Final = """You are Lovv V2 Modify Intent Agent.
-Parse rawModifyQuery against the provided currentOrder itinerary context.
-Return only the JSON schema fields. Do not explain.
-
-Rules:
-- The frontend never sends edit_ops. You must produce edit_ops from rawModifyQuery.
-- Preserve currentOrder item_id/content_id/day/order when resolving targets.
-- Output status=ok only when the edit is executable and target resolution is exact.
-- V2 supports only REPLACE edit ops and city_change.
-- For slot replacement, set kind=slot_replace, routing_hint=planner_apply_edit.
-- For destination city changes, set kind=city_change, routing_hint=city_select_rediscovery, and leave edit_ops empty.
-- Use status=needs_clarification for unresolved or ambiguous targets.
-- Use status=unsupported and kind=backlog for add/remove/reorder/date/booking/trip-length requests.
-- Seed targets may use same_theme_required. Do not silently allow different-theme seed replacement.
-- condition.replacement_query is null when the user only asks for another similar place.
-- Keep audit concise."""
 
 MODIFY_PROMPT_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -120,14 +109,28 @@ def validate_modify_prompt_output(
         ),
         "raw_modify_query": raw_query,
         "kind": kind,
-        "edit_ops": _list(payload.get("edit_ops"), "edit_ops"),
-        "city_change": _mapping_or_none(payload.get("city_change"), "city_change"),
-        "clarification": _mapping_or_none(payload.get("clarification"), "clarification"),
+        "edit_ops": normalize_prompt_edit_ops(
+            _list(payload.get("edit_ops"), "edit_ops"),
+            request,
+        ),
+        "city_change": normalize_prompt_city_change(
+            _mapping_or_none(payload.get("city_change"), "city_change"),
+            request,
+        ),
+        "clarification": _clarification(
+            payload.get("clarification"),
+            status=status,
+            raw_query=raw_query,
+        ),
         "unsupported_reasons": _string_list(
             payload.get("unsupported_reasons"),
             "unsupported_reasons",
         ),
-        "routing_hint": _required_text(payload.get("routing_hint"), "routing_hint"),
+        "routing_hint": _routing_hint(
+            status=status,
+            kind=kind,
+            value=payload.get("routing_hint"),
+        ),
         "audit": dict(_mapping(payload.get("audit"), "audit")),
     }
     _validate_status_shape(result)
@@ -145,6 +148,51 @@ def _validate_status_shape(result: Mapping[str, Any]) -> None:
         raise SchemaValidationError("unsupported modify intent requires unsupported_reasons")
     if status == "needs_clarification" and result["clarification"] is None:
         raise SchemaValidationError("clarification modify intent requires clarification")
+
+
+def _routing_hint(*, status: str, kind: str, value: Any) -> str:
+    if status == "needs_clarification":
+        return "response_packager_wait_user"
+    if status == "unsupported":
+        return "response_packager_notice"
+    if kind == "city_change":
+        return "city_select_rediscovery"
+    if kind == "slot_replace":
+        return "planner_apply_edit"
+    return _required_text(value, "routing_hint")
+
+
+def _clarification(value: Any, *, status: str, raw_query: str) -> dict[str, Any] | None:
+    if status != "needs_clarification":
+        return _mapping_or_none(value, "clarification")
+    payload = dict(_mapping(value, "clarification"))
+    if isinstance(payload.get("reason_code"), str):
+        return payload
+    text = " ".join(str(item) for item in (payload.get("reason"), payload.get("suggestion"), raw_query))
+    return {
+        "reason_code": _fallback_reason_code(text),
+        "prompt": _fallback_prompt(payload),
+        "options": list(payload.get("options", []))
+        if isinstance(payload.get("options"), list)
+        else [],
+    }
+
+
+def _fallback_reason_code(text: str) -> str:
+    lowered = text.lower()
+    if "seed" in lowered or "핵심" in text:
+        return "modify_seed_theme_conflict"
+    if "ambiguous" in lowered or "여러" in text:
+        return "modify_target_ambiguous"
+    return "modify_target_unresolved"
+
+
+def _fallback_prompt(payload: Mapping[str, Any]) -> str:
+    for key in ("prompt", "suggestion", "reason"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "수정 조건을 다시 확인해주세요."
 
 
 def _choice(value: Any, choices: tuple[str, ...], field_name: str) -> str:

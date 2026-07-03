@@ -8,7 +8,7 @@ from lovv_agent_v2.agents.intent.modify_slots import (
     avoid_city_ids,
     current_order,
     public_operation,
-    slot_replace_operation,
+    slot_replace_operations,
 )
 from lovv_agent_v2.models.city_identity import load_default_city_identity_map
 
@@ -53,32 +53,80 @@ def build_modify_intent(
             "routing_hint": "city_select_rediscovery",
             "audit": {"parser": "rule_v2"},
         }
-    operation = slot_replace_operation(raw_query, current_order_items)
-    if operation is None:
+    operations = slot_replace_operations(raw_query, current_order_items)
+    if not operations:
         return _clarification_result(
             base,
             reason_code="modify_target_unresolved",
             prompt="어떤 장소를 바꿀까요?",
             options=[],
         )
-    if operation["target"]["resolution"] == "ambiguous":
+    ambiguous_operation = _first_operation_with_resolution(operations, "ambiguous")
+    if ambiguous_operation is not None:
         return _clarification_result(
             base,
             reason_code="modify_target_ambiguous",
             prompt="어떤 장소를 바꿀까요?",
-            options=operation["clarification_options"],
+            options=ambiguous_operation["clarification_options"],
+        )
+    if _has_duplicate_targets(operations):
+        return _clarification_result(
+            base,
+            reason_code="modify_ops_conflict",
+            prompt="같은 장소에 여러 수정 조건이 들어왔습니다. 한 번에 하나씩 바꿔주세요.",
+            options=[],
+        )
+    seed_conflict = _seed_conflict_operation(operations)
+    if seed_conflict is not None:
+        return _clarification_result(
+            base,
+            reason_code="modify_seed_theme_conflict",
+            prompt="핵심 장소는 같은 테마 안에서만 바꿀 수 있습니다. 같은 테마로 바꿀까요?",
+            options=[],
         )
     return {
         **base,
         "status": "ok",
         "kind": "slot_replace",
-        "edit_ops": [public_operation(operation)],
+        "edit_ops": [public_operation(operation) for operation in operations],
         "city_change": None,
         "clarification": None,
         "unsupported_reasons": [],
         "routing_hint": "planner_apply_edit",
         "audit": {"parser": "rule_v2"},
     }
+
+
+def _first_operation_with_resolution(
+    operations: tuple[Mapping[str, Any], ...],
+    resolution: str,
+) -> Mapping[str, Any] | None:
+    for operation in operations:
+        if operation["target"]["resolution"] == resolution:
+            return operation
+    return None
+
+
+def _has_duplicate_targets(operations: tuple[Mapping[str, Any], ...]) -> bool:
+    seen: set[str] = set()
+    for operation in operations:
+        target = operation["target"]
+        item_id = target.get("item_id") or target.get("content_id")
+        if item_id is None:
+            continue
+        if item_id in seen:
+            return True
+        seen.add(item_id)
+    return False
+
+
+def _seed_conflict_operation(
+    operations: tuple[Mapping[str, Any], ...],
+) -> Mapping[str, Any] | None:
+    for operation in operations:
+        if operation["seed_policy"]["policy"] == "seed_theme_conflict":
+            return operation
+    return None
 
 
 def _modify_base(request: Mapping[str, Any], raw_query: str) -> dict[str, Any]:

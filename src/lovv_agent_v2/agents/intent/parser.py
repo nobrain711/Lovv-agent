@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Final, Literal, assert_never
 
+from lovv_agent_v2.agents.intent.region_resolver import (
+    extract_region_spans,
+    resolve_region_preferences,
+)
 from lovv_agent_v2.agents.intent.validator import validate_preference_sets
 
 PreferencePolarity = Literal["preferred", "disliked"]
@@ -16,41 +21,19 @@ THEME_ID_TO_LABEL: Final[dict[str, str]] = {
     "food_local": "미식·노포",
 }
 
-REGION_ID_TO_LABEL: Final[dict[str, str]] = {
-    "gangwon": "강원도",
-    "gyeongbuk": "경북",
-    "sokcho": "속초",
-    "andong": "안동",
-    "gyeongju": "경주",
-    "gangneung": "강릉",
-    "samcheok": "삼척",
-    "yeongju": "영주",
-    "uljin": "울진",
-}
-
 _THEME_KEYWORDS: Final[dict[str, tuple[str, ...]]] = {
     "sea_coast": ("바다", "해안", "해변", "바닷가", "오션", "섬"),
-    "nature_trekking": ("자연", "트레킹", "등산", "숲길", "숲", "산책", "산"),
+    "nature_trekking": ("자연", "트레킹", "등산", "숲길", "숲"),
     "history_tradition": ("역사", "전통", "유적", "문화재", "고택", "한옥"),
     "art_sense": ("예술", "감성", "전시", "미술관", "갤러리", "공방"),
     "healing_rest": ("온천", "휴양", "힐링", "스파", "쉼", "쉬는"),
     "food_local": ("미식", "맛집", "노포", "로컬 맛", "음식", "먹거리"),
 }
 
-_REGION_KEYWORDS: Final[dict[str, tuple[str, ...]]] = {
-    "gangwon": ("강원", "강원도"),
-    "gyeongbuk": ("경북", "경상북도"),
-    "sokcho": ("속초",),
-    "andong": ("안동",),
-    "gyeongju": ("경주",),
-    "gangneung": ("강릉",),
-    "samcheok": ("삼척",),
-    "yeongju": ("영주",),
-    "uljin": ("울진",),
-}
-
 _NEGATIVE_SEPARATORS: Final[tuple[str, ...]] = (
     "제외하고",
+    "피하고",
+    "별로고",
     "빼고",
     "빼줘",
     "빼",
@@ -84,6 +67,11 @@ class IntentPreferenceResult:
     disliked_theme_ids: tuple[str, ...] = ()
     preferred_region_ids: tuple[str, ...] = ()
     disliked_region_ids: tuple[str, ...] = ()
+    preferred_region_spans: tuple[str, ...] = ()
+    disliked_region_spans: tuple[str, ...] = ()
+    unresolved_region_spans: tuple[str, ...] = ()
+    preferred_region_names_value: tuple[str, ...] = ()
+    disliked_region_names_value: tuple[str, ...] = ()
     contradiction_reasons: tuple[str, ...] = ()
 
     @property
@@ -92,11 +80,11 @@ class IntentPreferenceResult:
 
     @property
     def preferred_region_names(self) -> tuple[str, ...]:
-        return region_names(self.preferred_region_ids)
+        return self.preferred_region_names_value
 
     @property
     def disliked_region_names(self) -> tuple[str, ...]:
-        return region_names(self.disliked_region_ids)
+        return self.disliked_region_names_value
 
     @property
     def needs_clarification(self) -> bool:
@@ -116,27 +104,37 @@ class _PolarizedSegment:
 
 
 def parse_initial_query(raw_query: str) -> IntentPreferenceResult:
-    cleaned_raw_query = " ".join(raw_query.split())
+    normalized_query = " ".join(raw_query.split())
     preferred_theme_ids, disliked_theme_ids = _extract_preferences(
-        cleaned_raw_query,
+        normalized_query,
         _THEME_KEYWORDS,
     )
-    preferred_region_ids, disliked_region_ids = _extract_preferences(
-        cleaned_raw_query,
-        _REGION_KEYWORDS,
+    preferred_region_spans, disliked_region_spans = _extract_preferences(
+        normalized_query,
+        _region_keyword_map(normalized_query),
+    )
+    region_resolution = resolve_region_preferences(
+        preferred_spans=preferred_region_spans,
+        disliked_spans=disliked_region_spans,
+        raw_query=normalized_query,
     )
     validation = validate_preference_sets(
         preferred_theme_ids=preferred_theme_ids,
         disliked_theme_ids=disliked_theme_ids,
-        preferred_region_ids=preferred_region_ids,
-        disliked_region_ids=disliked_region_ids,
+        preferred_region_ids=region_resolution.preferred_region_ids,
+        disliked_region_ids=region_resolution.disliked_region_ids,
     )
     return IntentPreferenceResult(
-        cleaned_raw_query=cleaned_raw_query,
+        cleaned_raw_query=clean_preference_query(normalized_query),
         preferred_theme_ids=preferred_theme_ids,
         disliked_theme_ids=disliked_theme_ids,
-        preferred_region_ids=preferred_region_ids,
-        disliked_region_ids=disliked_region_ids,
+        preferred_region_ids=region_resolution.preferred_region_ids,
+        disliked_region_ids=region_resolution.disliked_region_ids,
+        preferred_region_spans=region_resolution.preferred_region_spans,
+        disliked_region_spans=region_resolution.disliked_region_spans,
+        unresolved_region_spans=region_resolution.unresolved_region_spans,
+        preferred_region_names_value=region_resolution.preferred_region_names,
+        disliked_region_names_value=region_resolution.disliked_region_names,
         contradiction_reasons=validation.contradiction_reasons,
     )
 
@@ -146,7 +144,22 @@ def theme_labels(theme_ids: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def region_names(region_ids: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(REGION_ID_TO_LABEL[region_id] for region_id in region_ids)
+    resolution = resolve_region_preferences(
+        preferred_spans=region_ids,
+        disliked_spans=(),
+        raw_query=" ".join(region_ids),
+    )
+    return resolution.preferred_region_names
+
+
+def clean_preference_query(raw_query: str) -> str:
+    normalized_query = " ".join(raw_query.split())
+    positive_segments = tuple(
+        segment.text.strip(" ,.!?。")
+        for segment in _polarized_segments(normalized_query)
+        if segment.polarity == "preferred" and segment.text.strip(" ,.!?。")
+    )
+    return " ".join(positive_segments) if positive_segments else normalized_query
 
 
 def _extract_preferences(
@@ -167,7 +180,20 @@ def _extract_preferences(
     return _dedupe(preferred_ids), _dedupe(disliked_ids)
 
 
+def _region_keyword_map(raw_query: str) -> dict[str, tuple[str, ...]]:
+    return {span: (span,) for span in extract_region_spans(raw_query)}
+
+
 def _polarized_segments(text: str) -> tuple[_PolarizedSegment, ...]:
+    sentence_parts = tuple(part.strip() for part in re.split(r"[.!?。]+", text))
+    if len(tuple(part for part in sentence_parts if part)) > 1:
+        return tuple(
+            segment
+            for part in sentence_parts
+            if part
+            for segment in _polarized_segments(part)
+        )
+
     for separator in _CONTRAST_SEPARATORS:
         if separator in text:
             segments: list[_PolarizedSegment] = []

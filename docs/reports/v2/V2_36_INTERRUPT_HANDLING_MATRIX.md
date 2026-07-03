@@ -23,7 +23,7 @@
 1. **Clarification interrupt**
    - graph 실행 중 `END_WAIT_USER` 응답을 만들고 LangGraph `interrupt()`로 멈춘다.
    - 같은 `thread_id`에 대해 `Command(resume=...)`로 이어간다.
-   - 사용자는 `optionId`만 선택한다. 자연어 답변이면 Intent가 기존 option 중 하나로 resolve한다.
+   - 현재 프론트는 `optionId`를 선택해 보낸다. 자연어 답변 resolve는 intent 후속 구현이다.
 
 2. **Modification request**
    - 초회 일정은 `modification_pending` 응답으로 끝난다.
@@ -38,7 +38,7 @@
 
 - `optionId`, `apply`, `then`은 clarification option 생성 시점에 서버가 확정한다.
 - 사용자는 `optionId`만 보낸다.
-- 자연어 응답은 Intent가 checkpoint의 pending options 중 하나로 resolve한다.
+- 자연어 응답은 후속 Intent resolver가 checkpoint의 pending options 중 하나로 resolve한다.
 - resume 처리 시 `apply`와 `then`은 사용자 payload가 아니라 checkpoint에 저장된 option 원본에서 복원한다.
 - Intent는 새 option을 만들지 않는다.
 - Resolve가 애매하거나 기존 option 밖의 요청이면 실행하지 않고 다시 묻는다.
@@ -69,8 +69,8 @@
 | flow | trigger | response_status | LangGraph interrupt | next user input | checkpoint 필요 | owner |
 |---|---|---:|---:|---|---:|---|
 | 초회 생성 성공 | planner/packager 완료 | `modification_pending` | no | modify request 또는 저장 확정 | yes | Response Packager |
-| 축제 재질문 | festival gate `needs_clarification` | `END_WAIT_USER` | yes | `resume.optionId` 또는 자연어 답변 | yes | Festival Verifier + Intent resolver |
-| intent 입력 불가 | 모순/너무 짧음/한국 외 | `END_WAIT_USER` | yes | 조건 재입력 | yes | Intent |
+| 축제 재질문 | festival gate `needs_clarification` | `END_WAIT_USER` | yes | `resume.optionId` | yes | Festival Verifier |
+| intent 선호 모순 | 선호/비선호 overlap 감지 | `END_WAIT_USER` | yes | 조건 재입력 | yes | Intent |
 | 수정 요청 | `entryType=modify` | `modification_pending` 또는 notice | no | 추가 수정/저장 | yes | Intent + Planner |
 | 수정 요청인데 checkpoint 없음 | missing/expired thread | `END_WAIT_USER` 또는 notice | no | 새 일정 생성 | no | Entrypoint/Supervisor/Packager |
 | 일정 저장 확정 | `entryType=confirm` 또는 save event | terminal end | no | 없음 | optional | Profile |
@@ -79,22 +79,34 @@
 
 ## 3. Intent Interrupt Matrix
 
-초기 production intent가 직접 생성하는 clarification은 `abort` 단일 option으로 시작한다.
+현재 intent 구현이 직접 판단할 수 있는 clarification 신호는 선호/비선호 overlap에 따른 `contradiction`이다. `underspecified`, `out_of_scope_region`은 아직 구현된 intent 판정이 아니므로 V2.0 후속 항목으로 둔다.
 
 | case | reasonCode | optionId | apply | then | resume 후 처리 |
 |---|---|---|---|---|---|
 | 모순된 입력 | `contradiction` | `revise_conditions` | `{}` | `abort` | 현재 run 종료, 새 조건 입력 요청 |
-| 너무 짧은 입력 | `underspecified` | `revise_conditions` | `{}` | `abort` | 현재 run 종료, 새 조건 입력 요청 |
-| 범위 밖, 한국 외 | `out_of_scope_region` | `revise_conditions` | `{}` | `abort` | 현재 run 종료, KR 범위 안내 |
 
-Intent가 처리하는 자연어 clarification answer는 별도 option을 만들지 않는다.
+현재 `src/lovv_agent_v2/agents/intent/` 구현 기준:
+
+- `parser.parse_initial_query()`는 테마/지역 선호와 비선호를 keyword 기반으로 추출한다.
+- `validator.validate_preference_sets()`는 preferred/disliked overlap만 `contradiction_reasons`로 만든다.
+- `node.intent_node()`는 `needs_clarification`, `clarifying_question`, `contradiction_reasons`를 intent state에 보존하지만, 아직 `Clarification` object나 LangGraph interrupt를 직접 만들지는 않는다.
+- prompt runtime이 있을 때 `prompt_intent_from_request()`는 같은 preference/soft/transport/congestion 필드를 structured output으로 보강한다.
+
+후속 intent 확장 후보:
+
+| case | reasonCode | 현재 상태 | 필요 구현 |
+|---|---|---|---|
+| 너무 짧은 입력 | `underspecified` | 미지원 | raw query 길이/정보량 rule 또는 LLM 판정 + abort-only clarification |
+| 범위 밖, 한국 외 | `out_of_scope_region` | 미지원 | country/region scope 판정 + KR 범위 안내 clarification |
+
+자연어 clarification answer resolver는 아직 구현되지 않았다. 후속 구현 시에도 resolver는 별도 option을 만들지 않고 기존 option 중 하나만 선택한다.
 
 | answer type | input | output | execution |
 |---|---|---|---|
 | button | `selectedOptionId` 또는 `optionId` | existing optionId | resume |
-| natural language resolved | "축제 빼고 계속" | existing optionId | resume |
-| ambiguous | "음... 아무거나" | unresolved | 재질문 |
-| out-of-option request | "제주로 바꿔" | unsupported | 재질문 또는 abort |
+| natural language resolved | "축제 빼고 계속" | existing optionId | 후속 구현 |
+| ambiguous | "음... 아무거나" | unresolved | 후속 구현 |
+| out-of-option request | "제주로 바꿔" | unsupported | 후속 구현 |
 
 ---
 
@@ -156,7 +168,7 @@ Planner가 일정을 만들면 Response Packager는 `modification_pending`으로
 | 후보가 얇지만 일정은 만들 수 있음 | `modification_pending` + notice | no | 사용자가 수정 요청 가능 |
 | anchored 도시 후보 부족으로 일정 품질 낮음 | `modification_pending` + notice | no | 사용자가 anchor 해제/조건 변경을 수정 요청 |
 
-초회 생성 완료 후 graph는 END로 끝나도 된다. checkpointer가 같은 `thread_id`의 최종 state를 저장하면 수정 요청은 가능하다.
+초회 생성 완료 후 graph는 내부적으로 END로 끝나도 된다. 다만 사용자 관점의 terminal completion은 아니다. 사용자가 저장/종료를 명시하기 전까지 초회 생성과 모든 수정 결과는 계속 `modification_pending`으로 반환하며, checkpointer가 같은 `thread_id`의 최종 state를 저장해야 다음 수정 요청이 가능하다.
 
 ### 수정 요청
 
@@ -203,6 +215,7 @@ Profile은 interrupt option을 만들지 않는다.
 | clarification answer | resume | downstream 재실행 | no |
 
 장기 profile 업데이트는 저장 확정된 일정에서만 수행한다.
+사용자가 확실하게 저장/종료를 누르지 않은 한, graph run이 끝났더라도 public response는 terminal END가 아니라 `modification_pending`이다.
 
 ---
 
@@ -212,7 +225,7 @@ Profile은 interrupt option을 만들지 않는다.
 |---|---|---|
 | generation request 또는 mock intent | 초회 생성 | initial state |
 | `resume` / `resumeValue` with optionId | clarification 선택 | `Command(resume=...)` |
-| natural language clarification answer | pending option resolve 필요 | Intent resolver 후 `Command(resume=optionId)` |
+| natural language clarification answer | 후속 지원 예정 | Intent resolver 구현 후 `Command(resume=optionId)` |
 | `entryType=modify` | 일정 수정 | checkpoint load + modify intent |
 | save/confirm event | 일정 확정 저장 | profile write path |
 
@@ -230,8 +243,10 @@ API 응답 규칙:
    - `festival_none`에 `search_any_festival_theme` option 추가.
    - resume patch에 `activeRequiredThemes=[]` 또는 `festivalThemeAgnostic=true`를 반영.
 2. Intent
-   - `contradiction`, `underspecified`, `out_of_scope_region`을 abort-only clarification으로 반환.
-   - 자연어 clarification answer를 checkpoint pending option으로 resolve.
+   - 현재는 `contradiction` 신호를 state에 보존한다.
+   - 다음 단계에서 `contradiction`을 abort-only clarification으로 승격한다.
+   - `underspecified`, `out_of_scope_region`은 별도 intent 판정이 추가된 뒤 matrix에 활성화한다.
+   - 후속으로 자연어 clarification answer를 checkpoint pending option으로 resolve.
 3. Supervisor / Resume
    - checkpoint option 원본에서 `apply/then` 복원.
    - `then=rerun_discovery`, `then=anchor`, `then=abort` routing 구현.
@@ -247,8 +262,8 @@ API 응답 규칙:
 |---|---|
 | `festival_none` response | `END_WAIT_USER`, options에 `continue_without_festival`, `search_any_festival_theme`, `revise_conditions` 포함 |
 | `search_any_festival_theme` resume | festival verifier 재시도 시 theme filter 미적용 |
-| natural language "축제 빼고 계속" | 기존 `continue_without_festival` option으로 resolve |
-| intent contradiction | `END_WAIT_USER`, `revise_conditions -> abort` 단일 option |
+| natural language "축제 빼고 계속" | 후속 Intent resolver 구현 후 기존 `continue_without_festival` option으로 resolve |
+| intent contradiction | 현재는 `needs_clarification=true`, `contradiction_reasons` state 보존. interrupt 승격 후 `END_WAIT_USER`, `revise_conditions -> abort` |
 | city_select path | clarification option 생성 없음 |
 | generation success | `modification_pending`, interrupt 없음, checkpoint 저장 |
 | modify with valid checkpoint | planner edit mode 진입 |

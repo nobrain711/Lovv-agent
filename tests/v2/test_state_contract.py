@@ -37,6 +37,8 @@ def _city_input() -> dict[str, object]:
         "execution_mode": "city_discovery",
         "congestion_pref": "neutral",
         "transport_pref": "unknown",
+        "preferred_theme_ids": ("sea_coast",),
+        "disliked_theme_ids": ("nature_trekking",),
     }
 
 
@@ -149,6 +151,8 @@ def test_profile_node_writes_city_select_input_and_profile_state() -> None:
     assert "city_select_input" in result["intent"]
     assert result["intent"]["trip_intent"]["themes"] == ("바다·해안",)
     assert result["intent"]["trip_intent"]["theme_weights"] == {"바다·해안": 1.3}
+    assert result["intent"]["trip_intent"]["preferred_theme_ids"] == ("sea_coast",)
+    assert result["intent"]["trip_intent"]["disliked_theme_ids"] == ("nature_trekking",)
     assert result["profile"]["applied_persona_id"] == "P-sea"
     assert result["profile"]["effective_theme_weights"] == {"바다·해안": 1.3}
     assert "profile_result" not in result["profile"]

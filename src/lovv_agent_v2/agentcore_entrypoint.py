@@ -251,9 +251,6 @@ def _state_from_recommendation_request(
     )
     return {
         "request": normalized_request,
-        "intent": {
-            "city_select_input": _city_select_input_from_request(normalized_request),
-        },
         "profile": {},
     }
 
@@ -312,10 +309,20 @@ def _followup_request(
 
 
 def _has_create_request_fields(payload: Mapping[str, Any]) -> bool:
-    return all(
+    has_required_fields = all(
         key in payload
         for key in ("entryType", "country", "travelMonth", "tripType", "includeFestivals")
-    ) and ("themes" in payload or "activeRequiredThemes" in payload)
+    )
+    return has_required_fields and _has_theme_selection(payload)
+
+
+def _has_theme_selection(payload: Mapping[str, Any]) -> bool:
+    value = payload.get("activeRequiredThemes", payload.get("themes"))
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, (list, tuple)):
+        return False
+    return any(isinstance(item, str) and item.strip() for item in value)
 
 
 def _entry_type(payload: Mapping[str, Any]) -> str:
@@ -323,39 +330,6 @@ def _entry_type(payload: Mapping[str, Any]) -> str:
     if not isinstance(value, str):
         return "create"
     return value.strip().lower().replace("-", "_")
-
-
-def _city_select_input_from_request(request: Mapping[str, Any]) -> dict[str, Any]:
-    destination_id = request.get("destination_id")
-    include_festivals = bool(request["include_festivals"])
-    execution_mode = _execution_mode(
-        destination_id=destination_id,
-        include_festivals=include_festivals,
-    )
-    return {
-        "country": request["country"],
-        "travel_month": request["travel_month"],
-        "travel_year": request.get("travel_year"),
-        "trip_type": request["trip_type"],
-        "active_required_themes": tuple(request["themes"]),
-        "include_festivals": include_festivals,
-        "cleaned_raw_query": request["raw_query"],
-        "soft_preference_query": request.get("soft_preference_query", ""),
-        "unsupported_conditions": (),
-        "destination_id": destination_id,
-        "user_location": request.get("user_location"),
-        "execution_mode": execution_mode,
-        "congestion_pref": request.get("congestion_pref", "neutral"),
-        "transport_pref": request.get("transport_pref", "unknown"),
-    }
-
-
-def _execution_mode(*, destination_id: Any, include_festivals: bool) -> str:
-    if isinstance(destination_id, str) and destination_id.strip():
-        return "anchored_place_search"
-    if include_festivals:
-        return "festival_seeded_city_discovery"
-    return "city_discovery"
 
 
 def _text_or_none(value: Any) -> str | None:
