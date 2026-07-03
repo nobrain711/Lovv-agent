@@ -21,6 +21,18 @@ Profile 데이터의 live 정본은 DynamoDB `LovvUserProfile`이다. `src/lovv_
 3. DynamoDB read 실패, missing item, malformed item은 추천 흐름을 실패시키지 않고 cold profile(`None`)로 degrade한다.
 4. 테스트/fixture 실행에서는 state의 `profile.lovv_user_profile` 또는 `profile.mock_profile`을 허용한다. 이 값은 live DynamoDB보다 우선하는 운영 계약이 아니라 local injection seam이다.
 
+### Saved itinerary evidence tool 상태
+
+`src/lovv_agent_v2/agents/profile/rds_mysql_tool.py`에는 MySQL 저장 일정 신호를 profile evidence로 읽는 `RdsSavedItinerarySignalsTool`이 있다. 이 도구는 다음 RDS/MySQL 테이블을 읽어 `saved_trip_count`, 최근 저장 일정, 좋아요 일정, 일정 item snapshot을 evidence로 만든다.
+
+- `itineraries`
+- `itinerary_items`
+- `plan_reactions`
+
+현재 구현은 SQL client protocol을 주입받는 source-level 도구이며, 안전한 table identifier 검증과 `recent_limit`/`liked_limit` 상한을 둔다. 테스트는 `tests/v2/test_profile_rds_mysql_tool.py`가 담당한다.
+
+배포 경계: 이 도구와 `rds_mysql_rows.py`는 현재 `src/lovv_agent_v2`와 `app/LovvAgentV2/lovv_agent_v2`에 동일하게 존재한다. 다만 AgentCore 배포 런타임에서 실제로 사용한다고 보려면 RDS 연결 설정, Secrets/IAM/VPC 배선, 호출 owner 연결을 별도 작업으로 완료해야 한다.
+
 ### write 경계
 - 추천 실행 중 Profile Agent는 read-only다.
 - `entry_type=itinerary_confirmed` 또는 동등한 확정 이벤트에서만 profile update 요청을 남긴다.
@@ -52,3 +64,4 @@ city_select: active 테마에 대해 effective를 **정규화**한 w[t]를 cover
 
 ## 통합 메모
 - Intent→Profile agent가 request_theme_weights + profile effective를 결합 → city_select가 결합된 effective theme_weights를 소비(V2_15 변경 0). city_select는 결합 결과만 봄.
+- RDS saved-itinerary evidence는 장기 profile 정본을 대체하지 않는다. DynamoDB `LovvUserProfile`은 hot aggregate source이고, RDS 도구는 저장 일정 기반 evidence supplement 후보로만 취급한다.

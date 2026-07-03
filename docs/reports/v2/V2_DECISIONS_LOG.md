@@ -29,7 +29,7 @@
 - **write(쓰기)**: 사용자가 일정을 **저장(확정)**할 때, 그 저장된 일정 정보(테마·선택 장소 등)에서 theme_weights를 집계해 profile에 반영. **수정 중간 발화·단발 신호는 장기 profile에 직접 누적하지 않음**(저장된 완성 일정만 학습 → 변덕 방지).
 - **read/fallback "충분" 기준**: **저장 일정 수 ≥ n**(또는 profile에 '반영 횟수' 카운터 별도 저장). 충분하면 모호 입력을 profile로 자동 채움(추천 이유에 "이전 선호 기반" 명시), 부족하면 되묻기.
 - n 값은 추후 튜닝(초안 2~3).
-**파급**: **"일정 저장" 이벤트**가 profile write 트리거 → front에서 저장 신호 필요(신규 의존). `LovvUserProfile`에 `saved_trip_count`(=trip_count 명확화)·집계 theme_weights.
+**파급**: **"일정 저장" 이벤트**가 profile write 트리거 → front에서 저장 신호 필요(신규 의존). `LovvUserProfile`에 `saved_trip_count`(=trip_count 명확화)·집계 theme_weights. 저장 일정 evidence 보강은 `src/lovv_agent_v2/agents/profile/rds_mysql_tool.py`와 `app/LovvAgentV2/lovv_agent_v2/agents/profile/rds_mysql_tool.py`에 동일하게 존재하지만, 운영 사용 전 RDS 연결 설정, Secrets/IAM/VPC 배선, 호출 owner 연결이 필요하다.
 
 ### ✅ D-E · 이동수단 신호 (transport_pref)  (2026-06-28)
 **결정**: `transport_pref = walk / car / unknown` 3값(거친 soft 신호). **walk → 슬롯 간 거리 페널티 강화(도보 집약)**, **car → 완화**, **unknown → 기본**. 역·터미널 라우팅은 아님. 이 값은 request field가 아니라 Intent LLM이 `raw_query`에서 파싱해 `CitySelectInput`/`PlannerIntent`에 기록한다.
@@ -83,6 +83,11 @@
 **결정**: `city_monthly_weather_risks.json`은 primary itinerary를 바꾸는 city_select ranking 요소가 아니라, planner 후단의 weather notice 및 optional `alternative_itinerary` 생성 trigger로 사용한다. Lookup key는 `(selected_city_id, travel_month)`이며, risk row가 없으면 실패하지 않고 notice/alternative 없이 진행한다.
 **응답 규칙**: `alternative_itinerary`는 기본 일정의 자동 대체가 아니라 weather-sensitive outdoor/mixed non-seed slot에 대한 backup proposal이다. 사용자는 primary itinerary를 그대로 받고, weather risk가 높을 때만 평년 기준 weather notice와 대체 후보를 함께 본다. live forecast처럼 표현하지 않는다.
 **정본**: `V2_32_ALTERNATIVE_ITINERARY_WEATHER_DIRECTIVE.md`.
+
+### ✅ Intent 입출력 소유 경계 / modify 계약  (2026-07-02)
+**결정**: 프론트는 request facts와 사용자 원문을 보내고, Intent는 자연어 신호와 clarification/modify intent만 해석한다. API-owned field(`country`, `travelMonth`, `travelYear`, `tripType`, `includeFestivals`, `destinationId`, `userLocation`)는 LLM이 사실상 재결정하지 않으며, 충돌 시 request 값을 우선한다.
+**응답 규칙**: `entryType`은 `create`, `clarify`, `modify`, `confirm`으로 분기한다. `modify`에서 프론트는 `editOps`를 보내지 않고, Intent가 checkpoint/current itinerary를 기준으로 `slot_replace` 또는 `city_change`를 만들어 Supervisor/Planner에 넘긴다. `city_key`, `ddb_pk`, profile weight, place candidates, route legs는 Intent 소유가 아니다.
+**정본**: `V2_34_MODIFY_INTENT_SCHEMA.md`, `V2_38_INTENT_FRONTEND_INPUT_CONTRACT.md`, `V2_39_INTENT_PROCESSING_OUTPUT_SCHEMA.md`.
 
 ---
 

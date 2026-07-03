@@ -26,14 +26,17 @@
 | 18 | `V2_18_FESTIVAL_HANDLING.md` | 축제 처리 설계 초안(일부 결정은 21이 supersede) |
 | 20 | `V2_20_MASTER_HANDOFF.md` | V2 현상태 master handoff + 다음 작업 큐 |
 | 21 | `V2_21_FESTIVAL_DIRECTIVE.md` | **Festival 중앙 결정 + city_select/festival/planner/packager 세션별 지시서** |
+| 22 | `V2_22_PROFILE_CONFIG.md` | **Profile Agent theme-weight config + runtime source/RDS evidence 경계** |
 | 22 | `V2_22_RESPONSE_CLARIFICATION_DIRECTIVE.md` | **기존 recommendation response 유지 + optional clarification block 확장 지시서** |
 | 23 | `V2_23_STATE_CONTRACT_DIRECTIVE.md` | **V2 Canonical UnifiedAgentState 계약 + legacy CandidateEvidence 제거 지시서** |
 | 32 | `V2_32_ALTERNATIVE_ITINERARY_WEATHER_DIRECTIVE.md` | **월별 weather risk 기반 alternative itinerary 지시서** |
 | 32 | `V2_32_CITY_SELECT_SCORING_LEGACY_AUDIT.md` | **city_select 스코어링 V1 legacy 감사와 제거/유지 판단** |
 | 33 | `V2_33_SCORING_DATADRIVEN_RATIONALE.md` | **city_select/planner 점수식 도달 과정과 남은 한계** |
-| 34 | `V2_34_MODIFY_INTENT_SCHEMA.md` | **수정 Intent Agent 출력 스키마(slot_replace/reset/backlog + seed same-theme 정책)** |
+| 34 | `V2_34_MODIFY_INTENT_SCHEMA.md` | **수정 Intent Agent 출력 스키마(slot_replace/city_change/backlog + seed same-theme 정책)** |
 | 35 | `V2_35_ROUTE_DAYS_EXPLANATION.md` | **Planner route_days 일자 배치 알고리즘 + smoke 사례 설명** |
 | 36 | `V2_36_INTERRUPT_HANDLING_MATRIX.md` | **interrupt option/apply/then 처리 matrix와 수락 기준** |
+| 38 | `V2_38_INTENT_FRONTEND_INPUT_CONTRACT.md` | **Frontend → Intent 입력 계약(create/clarify/modify/confirm + request-owned field 경계)** |
+| 39 | `V2_39_INTENT_PROCESSING_OUTPUT_SCHEMA.md` | **Intent 처리/출력 state 계약(entryType dispatch + downstream owner 경계)** |
 | — | `V2_DECISIONS_LOG.md` | Step 4 결정 로그(왜 그렇게 정했나) |
 | — | `../../tasks/results/v2_intent_mocks/` | V2 입력 mock(생성14·수정4) + 핸드오프 |
 
@@ -47,7 +50,7 @@
 ## 공유 가이드 — 깊이 3단
 - **1분(전원)**: 다이어그램 PNG + `08` §0·§5. "뭘 만드나 / V2.0에 뭐가 보이나".
 - **확정 검토(설계 참여자)**: `07`(델타+우선순위) + `V2_DECISIONS_LOG`(근거).
-- **구현 착수(담당)**: `09`(Intent 파싱) + `10`(검증·계측).
+- **구현 착수(담당)**: `09`(Intent 파싱) + `22_PROFILE`(Profile config/source) + `34`/`38`/`39`(최신 Intent 입출력 계약) + `10`(검증·계측).
 
 ### 미팅 읽는 순서
 다이어그램 → `08`(위→아래로 시나리오 대응) → `07`(변경점·우선순위) → 열린 항목 결정.
@@ -63,4 +66,6 @@
 - ✅ Step 1~3 시나리오(발산→인스코프→영향 매핑) + 구체화(04)
 - ✅ Step 4 정책·계약 결정 10건 (`V2_DECISIONS_LOG`)
 - ✅ Step 5 아키텍처 확정 + 우선순위(`07`) · 커버리지(`08`) · Intent 파싱(`09`) · 검증 계획(`10`) · 다이어그램
+- ✅ 2026-07-02 Intent 계약 갱신 반영: 수정 intent 출력(`34`) · front 입력(`38`) · intent 처리/출력 state(`39`)
+- ✅ 2026-07-03 Profile RDS evidence tool 상태 반영: `src/`와 `app/LovvAgentV2/` 파일 parity 있음, runtime RDS 배선 미완료
 - ▶ **다음**: `10` §0 계측(로깅+사유 enum) → thin slice 코드 착수(F3 수정 루프부터)

@@ -28,6 +28,12 @@ It writes:
 `manager.py`
 is reserved for profile write rules, aggregate weights, and fallback triggers.
 
+`rds_mysql_tool.py`
+is a source-tree tool for reading saved itinerary evidence from MySQL
+(`itineraries`, `itinerary_items`, `plan_reactions`). It is mirrored under
+`app/LovvAgentV2/`, but deployed AgentCore runtime use still requires separate
+RDS connection, secrets/IAM/VPC, and caller wiring.
+
 ## Weight Policy
 
 The weight math lives in `lovv_agent_v2.models.profile`, not inside this
