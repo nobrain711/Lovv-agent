@@ -48,8 +48,16 @@ def route_next_action(state: UnifiedAgentState) -> str:
 def _next_node(state: Mapping[str, Any], *, reason_code: str | None) -> str:
     if _is_itinerary_confirmation_state(state):
         return END_ROUTE if _has_profile_update(state) else "profile"
+    if _modify_intent_routes_direct_anchor_planner(state):
+        return "planner"
+    if _modify_intent_has_planner_output(state):
+        if _has_current_modify_response_payload(state):
+            return END_ROUTE
+        return "explain_itinerary" if not _has_itinerary_explanation(state) else "response_packager"
     if _has_response_payload(state):
         return END_ROUTE
+    if _modify_intent_needs_response(state):
+        return "response_packager"
     if reason_code is not None:
         return "response_packager"
     if not _has_profile_result(state):
@@ -85,16 +93,91 @@ def _completed_groups(state: Mapping[str, Any]) -> list[str]:
 
 
 def _clarification_reason_code(state: Mapping[str, Any]) -> str | None:
+    modify_intent = _modify_intent(state)
+    if modify_intent is not None:
+        value = _clarification_reason_from_group(modify_intent)
+        if value is not None:
+            return value
     for group_name in ("festival_gate", "city_select", "response"):
         group = state.get(group_name)
-        if not isinstance(group, Mapping):
-            continue
-        clarification = group.get("clarification")
-        if not isinstance(clarification, Mapping):
-            continue
-        value = clarification.get("reason_code")
-        if isinstance(value, str) and value.strip():
-            return value
+        if isinstance(group, Mapping):
+            value = _clarification_reason_from_group(group)
+            if value is not None:
+                return value
+    return None
+
+
+def _clarification_reason_from_group(group: Mapping[str, Any]) -> str | None:
+    clarification = group.get("clarification")
+    if not isinstance(clarification, Mapping):
+        return None
+    value = clarification.get("reason_code")
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _modify_intent_needs_response(state: Mapping[str, Any]) -> bool:
+    modify_intent = _modify_intent(state)
+    if modify_intent is None:
+        return False
+    status = modify_intent.get("status")
+    if status in {"needs_clarification", "unsupported"}:
+        return True
+    routing_hint = modify_intent.get("routing_hint")
+    return routing_hint in {"response_packager_wait_user", "response_packager_notice"}
+
+
+def _modify_intent_routes_direct_anchor_planner(state: Mapping[str, Any]) -> bool:
+    modify_intent = _modify_intent(state)
+    if modify_intent is None:
+        return False
+    return not _has_planner_output(state) and not _has_city_select_result_or_terminal_status(state) and (
+        modify_intent.get("status") == "ok"
+        and modify_intent.get("routing_hint")
+        in {"planner_direct_anchor", "city_select_rediscovery"}
+    )
+
+
+def _modify_intent_has_planner_output(state: Mapping[str, Any]) -> bool:
+    modify_intent = _modify_intent(state)
+    if modify_intent is None:
+        return False
+    return modify_intent.get("status") == "ok" and _has_planner_output(state)
+
+
+def _has_current_modify_response_payload(state: Mapping[str, Any]) -> bool:
+    modify_intent = _modify_intent(state)
+    if modify_intent is None:
+        return False
+    city_change = modify_intent.get("city_change")
+    if not isinstance(city_change, Mapping):
+        return False
+    response = state.get("response")
+    if not isinstance(response, Mapping):
+        return False
+    payload = response.get("response_payload")
+    if not isinstance(payload, Mapping):
+        return False
+    destination = payload.get("destination")
+    if not isinstance(destination, Mapping):
+        return False
+    target_id = city_change.get("target_city_id")
+    if isinstance(target_id, str) and destination.get("destinationId") == target_id:
+        return True
+    target_name = city_change.get("target_city_name")
+    return isinstance(target_name, str) and destination.get("name") == target_name
+
+
+def _modify_intent(state: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    intent = state.get("intent")
+    if not isinstance(intent, Mapping):
+        return None
+    modify_intent = intent.get("modify_intent")
+    if isinstance(modify_intent, Mapping):
+        return modify_intent
+    if intent.get("intent_type") == "modification":
+        return intent
     return None
 
 

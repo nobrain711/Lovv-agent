@@ -4,16 +4,24 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from lovv_agent_v2.agents.planner.domain.place_model import PlannerPlace, selection_sort_key
-from lovv_agent_v2.agents.planner.steps.route_days.day_profile import day_place_targets, trip_day_count
+from lovv_agent_v2.agents.planner.steps.route_days.cross_day_repair import (
+    RouteRepairInput,
+    RouteRepairLimits,
+    repair_trimmed_places,
+)
+from lovv_agent_v2.agents.planner.steps.route_days.day_profile import (
+    day_place_targets,
+    min_day_place_targets,
+    trip_day_count,
+)
 from lovv_agent_v2.agents.planner.steps.route_days.route_metrics import (
     DurationLookup,
-    day_travel_min,
-    max_leg_min,
-    travel_time_from_group,
 )
-
-MAX_DRIVE_LEG_MIN = 60.0
-MAX_DRIVE_DAY_MIN = 150.0
+from lovv_agent_v2.agents.planner.steps.route_days.trim_policy import (
+    RouteTrimLimits,
+    route_trim_limits,
+    trim_over_limit,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,21 +55,43 @@ def route_days(
     provider_audit: Mapping[str, object] | None = None,
 ) -> RoutingResult:
     lookup = DurationLookup(durations)
+    limits = route_trim_limits(transport_pref)
     if not places:
-        return RoutingResult(days=(), reserve=(), audit=_audit(transport_pref, False, (), provider_audit))
+        return RoutingResult(days=(), reserve=(), audit=_audit(transport_pref, False, (), provider_audit, limits))
     day_count = trip_day_count(trip_type)
     sorted_places = tuple(sorted(places, key=_sort_key, reverse=True))
     anchors = _anchors(sorted_places, day_count, lookup)
     day_targets = day_place_targets(trip_type, len(anchors))
+    day_min_targets = min_day_place_targets(trip_type, len(anchors))
     assignments = _assign_to_anchor_days(sorted_places, anchors, lookup, day_targets)
     reserve: list[PlannerPlace] = []
-    days: list[RouteDay] = []
+    day_groups: list[tuple[PlannerPlace, ...]] = []
     for index, anchor in enumerate(anchors, start=1):
         assigned = assignments.get(anchor.place_id, (anchor,))
         ordered = _nearest_neighbor_order(assigned, anchor, lookup)
-        kept, trimmed = _trim_over_limit(ordered, lookup)
+        kept, trimmed = trim_over_limit(
+            ordered,
+            lookup,
+            min_places=day_min_targets[index - 1],
+            limits=limits,
+        )
         reserve.extend(trimmed)
-        routed = _routed_places(kept, lookup)
+        day_groups.append(kept)
+    repair = repair_trimmed_places(
+        RouteRepairInput(
+            day_groups=tuple(day_groups),
+            reserve=tuple(reserve),
+            lookup=lookup,
+            limits=RouteRepairLimits(
+                hard_leg_limit_min=limits.hard_leg_limit_min,
+                day_limit_min=limits.day_limit_min,
+                soft_leg_limit_min=limits.soft_leg_limit_min,
+            ),
+        ),
+    )
+    days: list[RouteDay] = []
+    for index, anchor in enumerate(anchors, start=1):
+        routed = _routed_places(repair.day_groups[index - 1], lookup)
         days.append(
             RouteDay(
                 day=index,
@@ -71,10 +101,13 @@ def route_days(
                 day_travel_min=sum(place.move_min_from_prev for place in routed),
             ),
         )
-    audit = _audit(transport_pref, _is_compact(days), tuple(reserve), provider_audit)
+    audit = _audit(transport_pref, _is_compact(days), repair.reserve, provider_audit, limits)
     audit["day_place_targets"] = day_targets
+    audit["day_min_place_targets"] = day_min_targets
     audit["place_density_policy"] = "edge_days_lighter"
-    return RoutingResult(days=tuple(days), reserve=tuple(reserve), audit=audit)
+    audit["trim_floor_policy"] = "preserve_min_day_place_targets"
+    audit["cross_day_rescued_place_ids"] = repair.rescued_place_ids
+    return RoutingResult(days=tuple(days), reserve=repair.reserve, audit=audit)
 
 
 def _anchors(
@@ -134,30 +167,6 @@ def _nearest_neighbor_order(
     return tuple(ordered)
 
 
-def _trim_over_limit(
-    places: Sequence[PlannerPlace],
-    lookup: DurationLookup,
-) -> tuple[tuple[PlannerPlace, ...], tuple[PlannerPlace, ...]]:
-    kept = list(places)
-    trimmed: list[PlannerPlace] = []
-    while len(kept) > 1 and (
-        day_travel_min(tuple(kept), lookup) > MAX_DRIVE_DAY_MIN
-        or max_leg_min(tuple(kept), lookup) > MAX_DRIVE_LEG_MIN
-    ):
-        candidate = _leg_limit_candidate(kept, lookup)
-        if candidate is None:
-            candidate = max(
-                (place for place in kept if not place.is_seed),
-                key=lambda place: travel_time_from_group(place, tuple(kept), lookup),
-                default=None,
-            )
-        if candidate is None:
-            break
-        kept.remove(candidate)
-        trimmed.append(candidate)
-    return tuple(kept), tuple(trimmed)
-
-
 def _routed_places(
     places: Sequence[PlannerPlace],
     lookup: DurationLookup,
@@ -184,23 +193,6 @@ def _medoid(
     )
 
 
-def _leg_limit_candidate(
-    places: Sequence[PlannerPlace],
-    lookup: DurationLookup,
-) -> PlannerPlace | None:
-    worst_pair = max(
-        zip(places, places[1:]),
-        key=lambda pair: lookup.minutes(pair[0], pair[1]),
-        default=None,
-    )
-    if worst_pair is None or lookup.minutes(worst_pair[0], worst_pair[1]) <= MAX_DRIVE_LEG_MIN:
-        return None
-    removable = tuple(place for place in worst_pair if not place.is_seed)
-    if not removable:
-        return None
-    return min(removable, key=_sort_key)
-
-
 def _is_compact(days: Sequence[RouteDay]) -> bool:
     leg_minutes = [
         routed.move_min_from_prev
@@ -216,6 +208,7 @@ def _audit(
     compact_walkable: bool,
     reserve: Sequence[PlannerPlace],
     provider_audit: Mapping[str, object] | None,
+    limits: RouteTrimLimits,
 ) -> dict[str, object]:
     notice = "walkable_compact_city" if transport_pref == "walk" and compact_walkable else ""
     if transport_pref == "walk" and not compact_walkable:
@@ -224,8 +217,10 @@ def _audit(
         "duration_unit": "minutes",
         "duration_profile": "driving",
         "fallback_used": "haversine_duration",
-        "max_leg_min": MAX_DRIVE_LEG_MIN,
-        "day_limit_min": MAX_DRIVE_DAY_MIN,
+        "max_leg_min": limits.soft_leg_limit_min,
+        "soft_leg_limit_min": limits.soft_leg_limit_min,
+        "day_limit_min": limits.day_limit_min,
+        "hard_leg_limit_min": limits.hard_leg_limit_min,
         "outlier_anchor_policy": "medoid_not_farthest",
         "transport_notice": notice,
         "trimmed_place_ids": [place.place_id for place in reserve],

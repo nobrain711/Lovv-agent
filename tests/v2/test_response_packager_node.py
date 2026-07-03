@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lovv_agent_v2.agents.response_packager.agent import ResponsePackagerAgent
 from lovv_agent_v2.agents.response_packager.contracts import ResponsePackagerInput
+from lovv_agent_v2.agents.response_packager.packager import package_recommendation_response
 from lovv_agent_v2.agents.response_packager.node import response_packager_node
 
 
@@ -147,3 +148,92 @@ def test_response_packager_agent_packages_clarification_mapping() -> None:
     assert output.response["response_status"] == "END_WAIT_USER"
     assert payload["clarification"]["reasonCode"] == "festival_none"
     assert payload["explainability"]["userNotice"] == clarification["prompt"]
+
+
+def test_response_packager_node_packages_modify_clarification(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "lovv_agent_v2.agents.response_packager.node.interrupt",
+        lambda payload: {"selectedOptionId": "revise_modify_query"},
+    )
+
+    result = response_packager_node(
+        {
+            "request": {
+                "entryType": "modify",
+                "threadId": "thread-001",
+                "itineraryRevision": "rev-001",
+                "rawModifyQuery": "핵심 장소를 자연 쪽으로 바꿔줘.",
+            },
+            "intent": {
+                "intent_type": "modification",
+                "modify_intent": {
+                    "status": "needs_clarification",
+                    "clarification": {
+                        "reason_code": "modify_seed_theme_conflict",
+                        "prompt": "핵심 장소는 같은 테마 안에서만 바꿀 수 있습니다.",
+                        "options": [],
+                    },
+                },
+            },
+        },
+    )
+
+    response = result["response"]
+    payload = response["response_payload"]
+    assert response["response_status"] == "END_WAIT_USER"
+    assert payload["clarification"]["reasonCode"] == "modify_seed_theme_conflict"
+    assert payload["explainability"]["userNotice"] == (
+        "핵심 장소는 같은 테마 안에서만 바꿀 수 있습니다."
+    )
+
+
+def test_response_packager_node_packages_modify_unsupported_notice() -> None:
+    result = response_packager_node(
+        {
+            "request": {
+                "entryType": "modify",
+                "threadId": "thread-001",
+                "itineraryRevision": "rev-001",
+                "rawModifyQuery": "3박 4일로 늘려줘.",
+            },
+            "intent": {
+                "intent_type": "modification",
+                "modify_intent": {
+                    "status": "unsupported",
+                    "unsupported_reasons": ["trip_length_change"],
+                },
+            },
+        },
+    )
+
+    payload = result["response"]["response_payload"]
+    assert result["response"]["response_status"] == "modification_pending"
+    assert payload["explainability"]["unsupportedConditions"] == ("trip_length_change",)
+    assert "trip_length_change" in payload["explainability"]["userNotice"]
+
+
+def test_response_packager_adds_notice_for_generation_unsupported_conditions() -> None:
+    response = package_recommendation_response(
+        planner_output={
+            "itinerary": [],
+            "recommendation_reasons": (),
+            "itinerary_flow_reason": "요청 조건을 반영한 일정입니다.",
+            "external_links": {},
+            "confidence": 0.5,
+            "user_notice": (),
+            "validation_result": {"planner_status_gate": "ok"},
+        },
+        request={
+            "request_id": "REQ-UNSUPPORTED",
+            "country": "KR",
+            "travel_month": 10,
+            "trip_type": "daytrip",
+            "destination_id": None,
+            "themes": ("바다·해안",),
+        },
+        selected_city=None,
+        unsupported_conditions=("실시간 혼잡도 보장",),
+    )
+
+    assert response["explainability"]["unsupportedConditions"] == ("실시간 혼잡도 보장",)
+    assert "실시간 혼잡도 보장" in response["explainability"]["userNotice"]

@@ -156,7 +156,7 @@ def _routing_hint(*, status: str, kind: str, value: Any) -> str:
     if status == "unsupported":
         return "response_packager_notice"
     if kind == "city_change":
-        return "city_select_rediscovery"
+        return "planner_direct_anchor"
     if kind == "slot_replace":
         return "planner_apply_edit"
     return _required_text(value, "routing_hint")

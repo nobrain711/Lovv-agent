@@ -50,7 +50,7 @@ def build_modify_intent(
             "city_change": city_change,
             "clarification": None,
             "unsupported_reasons": [],
-            "routing_hint": "city_select_rediscovery",
+            "routing_hint": "planner_direct_anchor",
             "audit": {"parser": "rule_v2"},
         }
     operations = slot_replace_operations(raw_query, current_order_items)

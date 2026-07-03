@@ -23,7 +23,7 @@ def should_retry_alternative_city(state: Mapping[str, object]) -> bool:
     if optional_mapping(planner.get("fallback")) is not None:
         return False
     city_select = optional_mapping(state.get("city_select"))
-    if city_select is None:
+    if city_select is None or not city_select:
         return False
     city_selection = mapping(city_select.get("city_selection_result"), "city_select.city_selection_result")
     selected = optional_mapping(city_selection.get("selected_city"))

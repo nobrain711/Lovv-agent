@@ -19,19 +19,32 @@ def retrieve_by_theme(
     themes: Sequence[str],
     city_id: str | None,
     ddb_pk: str | None = None,
+    preferred_city_ids: Sequence[str] = (),
+    disliked_city_ids: Sequence[str] = (),
 ) -> tuple[AttractionCandidate, ...]:
     all_theme_candidates: dict[str, list[AttractionCandidate]] = {}
     with ThreadPoolExecutor(max_workers=max(1, len(themes))) as executor:
-        raw_futures = {
-            executor.submit(
-                destination_search.search_candidates,
-                query_vector,
-                city_id=city_id,
-                ddb_pk=ddb_pk,
-                theme=theme,
-            ): theme
-            for theme in themes
-        }
+        raw_futures = {}
+        for theme in themes:
+            if preferred_city_ids or disliked_city_ids:
+                future = executor.submit(
+                    destination_search.search_candidates,
+                    query_vector,
+                    city_id=city_id,
+                    ddb_pk=ddb_pk,
+                    theme=theme,
+                    preferred_city_ids=preferred_city_ids,
+                    disliked_city_ids=disliked_city_ids,
+                )
+            else:
+                future = executor.submit(
+                    destination_search.search_candidates,
+                    query_vector,
+                    city_id=city_id,
+                    ddb_pk=ddb_pk,
+                    theme=theme,
+                )
+            raw_futures[future] = theme
         for future, theme in raw_futures.items():
             all_theme_candidates[theme] = list(future.result())
 

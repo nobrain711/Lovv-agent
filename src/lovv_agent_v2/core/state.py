@@ -16,3 +16,5 @@ class UnifiedAgentState(TypedDict, total=False):
     routing: NotRequired[dict[str, Any]]
     memory: NotRequired[dict[str, Any]]
     trace: NotRequired[dict[str, Any]]
+    runtime: NotRequired[dict[str, Any]]
+    itinerary_explanation_runtime: NotRequired[Any]

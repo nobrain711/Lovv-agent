@@ -41,15 +41,15 @@ def normalize_prompt_city_change(
     city_name = _optional_text(
         value.get("new_city", value.get("target_city", value.get("city"))),
     )
-    city_map = load_default_city_identity_map()
-    identity = city_map.get(city_name) if city_name else None
-    if identity is None and city_name is not None:
-        identity = city_map.get(f"{city_name}시")
-    if identity is None:
-        return value
     raw_query = _optional_text(
         request.get("rawModifyQuery", request.get("raw_modify_query")),
     )
+    city_map = load_default_city_identity_map()
+    identity = _identity_from_city_name(city_map, city_name)
+    if identity is None and raw_query is not None:
+        identity = _identity_from_raw_query(city_map, raw_query)
+    if identity is None:
+        return value
     return {
         "target_city_id": identity.city_id,
         "target_city_name": identity.city_name_ko,
@@ -58,6 +58,20 @@ def normalize_prompt_city_change(
         "carry_over_festivals": True,
         "avoid_city_ids": avoid_city_ids(current_order(request, {})),
     }
+
+
+def _identity_from_city_name(city_map: Any, city_name: str | None) -> Any:
+    if city_name is None:
+        return None
+    return city_map.get(city_name) or city_map.get(f"{city_name}시")
+
+
+def _identity_from_raw_query(city_map: Any, raw_query: str) -> Any:
+    for city_name in ("경주", "안동", "속초", "강릉", "삼척", "영주", "울진"):
+        identity = _identity_from_city_name(city_map, city_name)
+        if city_name in raw_query and identity is not None:
+            return identity
+    return None
 
 
 def _normalize_prompt_edit_op(

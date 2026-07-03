@@ -36,6 +36,19 @@ def _city_input() -> dict[str, object]:
     }
 
 
+def _discovery_city_input() -> dict[str, object]:
+    payload = dict(_city_input())
+    payload.update(
+        {
+            "include_festivals": False,
+            "execution_mode": "city_discovery",
+            "preferred_region_ids": ("KR-47-130", "KR-51-730"),
+            "disliked_region_ids": ("KR-11-000",),
+        },
+    )
+    return payload
+
+
 def test_retrieval_agent_searches_each_allowed_festival_city_directly() -> None:
     search = RecordingSearch()
     tools = CitySelectTools(
@@ -60,6 +73,31 @@ def test_retrieval_agent_searches_each_allowed_festival_city_directly() -> None:
     assert output.city_select["retrieval_audit"]["retrieved_candidate_count"] == 3
     assert "scratch" in output.city_select
     assert "pruned_groups" not in output.city_select
+
+
+def test_retrieval_agent_applies_region_filters_to_nationwide_discovery() -> None:
+    search = RecordingSearch()
+    tools = CitySelectTools(
+        destination_search=search,
+        dynamo_lookup=RecordingDynamoLookup(),
+        embedding=RecordingEmbedding(),
+    )
+
+    CitySelectRetrievalAgent(tools).run(
+        CitySelectRetrievalRequest(
+            candidate_input=_discovery_city_input(),
+            allowed_city_ids=None,
+        ),
+    )
+
+    assert search.calls == [
+        {
+            "city_id": None,
+            "theme": "역사·전통",
+            "preferred_city_ids": ("KR-47-130", "KR-51-730"),
+            "disliked_city_ids": ("KR-11-000",),
+        },
+    ]
 
 
 def test_city_select_subgraph_promotes_raw_query_vector_for_planner(monkeypatch: MonkeyPatch) -> None:
@@ -117,10 +155,19 @@ class RecordingSearch:
         city_id: str | None = None,
         ddb_pk: str | None = None,
         theme: str | None = None,
+        preferred_city_ids: Sequence[str] = (),
+        disliked_city_ids: Sequence[str] = (),
     ) -> tuple[AttractionCandidate, ...]:
         assert tuple(query_vector) == (0.1, 0.2)
         assert ddb_pk is None
-        self.calls.append({"city_id": city_id, "theme": theme})
+        self.calls.append(
+            {
+                "city_id": city_id,
+                "theme": theme,
+                "preferred_city_ids": tuple(preferred_city_ids),
+                "disliked_city_ids": tuple(disliked_city_ids),
+            },
+        )
         return (
             AttractionCandidate(
                 key=f"{city_id}-{theme}",
@@ -148,6 +195,7 @@ class RecordingSearch:
     ) -> PrunedCityGroups:
         assert tuple(searchable_place_themes) == ("역사·전통",)
         assert tuple(allowed_city_ids or ()) in (
+            (),
             ("KR-47-130",),
             ("KR-47-130", "KR-51-730", "KR-36-8"),
         )

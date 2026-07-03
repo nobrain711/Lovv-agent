@@ -90,8 +90,16 @@ def _state(
     state = {
         "intent": {
             "city_select_input": {
+                "country": "KR",
+                "travel_month": 9,
+                "travel_year": 2026,
+                "trip_type": "daytrip",
+                "active_required_themes": ("바다·해안",),
+                "include_festivals": False,
                 "cleaned_raw_query": "속초 바다 산책",
                 "soft_preference_query": "조용한 해안",
+                "execution_mode": "anchored_place_search",
+                "destination_id": "KR-SOKCHO",
             },
         },
         "city_select": {

@@ -14,6 +14,10 @@ REASON_CODES: tuple[str, ...] = (
     "contradiction",
     "thin_city",
     "weather_alternative_available",
+    "modify_target_unresolved",
+    "modify_target_ambiguous",
+    "modify_ops_conflict",
+    "modify_seed_theme_conflict",
 )
 
 NEXT_ACTIONS: tuple[str, ...] = (

@@ -98,6 +98,7 @@ def _planner_agent_request(agent_input: Mapping[str, object]) -> PlannerAgentReq
         soft_query=current_input["soft_query"] if isinstance(current_input["soft_query"], str) else "",
         seeds=mapping_sequence(current_input["seeds"]),
         active_themes=string_tuple(current_input["active_themes"]),
+        preferred_themes=string_tuple(current_input["preferred_themes"]),
         theme_weights=theme_weights(current_input["theme_weights"]),
         trip_type=text(current_input["trip_type"], "trip_type"),
         transport_pref=text(current_input["transport_pref"], "transport_pref"),

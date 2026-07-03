@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from lovv_agent_v2.agents.city_select.domain.contracts import CitySelectContext
 from lovv_agent_v2.agents.city_select.retrieval.policy import (
     allowed_city_pk,
     prepare_city_select_context,
@@ -70,6 +71,7 @@ class CitySelectRetrievalAgent:
             if context.candidate_input.destination_id
             else None
         )
+        preferred_city_ids, disliked_city_ids = _nationwide_region_filters(context)
         retrieved = _retrieve_for_context(
             tools.destination_search,
             query_vector=query_vector,
@@ -77,6 +79,8 @@ class CitySelectRetrievalAgent:
             include_festivals=context.include_festivals,
             allowed_city_ids=request.allowed_city_ids,
             anchor_ddb_pk=anchor_ddb_pk,
+            preferred_city_ids=preferred_city_ids,
+            disliked_city_ids=disliked_city_ids,
         )
         merged_candidates = merge_duplicate_candidates(retrieved)
         allowed = allowed_city_ids(context=context, allowed_city_ids=request.allowed_city_ids)
@@ -123,6 +127,8 @@ def _retrieve_for_context(
     include_festivals: bool,
     allowed_city_ids: Sequence[str] | None,
     anchor_ddb_pk: str | None,
+    preferred_city_ids: Sequence[str],
+    disliked_city_ids: Sequence[str],
 ) -> tuple[Any, ...]:
     if include_festivals and allowed_city_ids is not None:
         return retrieve_allowed_city_pool_by_theme(
@@ -137,4 +143,17 @@ def _retrieve_for_context(
         themes=themes,
         city_id=None,
         ddb_pk=anchor_ddb_pk,
+        preferred_city_ids=preferred_city_ids,
+        disliked_city_ids=disliked_city_ids,
+    )
+
+
+def _nationwide_region_filters(
+    context: CitySelectContext,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if context.include_festivals or context.candidate_input.destination_id is not None:
+        return (), ()
+    return (
+        tuple(context.candidate_input.preferred_region_ids),
+        tuple(context.candidate_input.disliked_region_ids),
     )

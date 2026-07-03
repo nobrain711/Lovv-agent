@@ -36,25 +36,64 @@ def _response_packager_input(state: Mapping[str, Any]) -> ResponsePackagerInput:
 
 
 def _request_payload(state: Mapping[str, Any]) -> Mapping[str, Any]:
+    city_input = _intent_city_input(state)
     request = state.get("request")
     if isinstance(request, Mapping):
-        return request
+        return _request_with_city_input(request, city_input)
+    if city_input is not None:
+        return _request_from_city_input(city_input)
+    raise SchemaValidationError("state.request or intent.city_select_input is required")
+
+
+def _intent_city_input(state: Mapping[str, Any]) -> Mapping[str, Any] | None:
     intent = state.get("intent")
     if isinstance(intent, Mapping):
         city_input = intent.get("city_select_input")
         if isinstance(city_input, Mapping):
-            return {
-                "request_id": "mock-v2-request",
-                "country": city_input.get("country"),
-                "travel_month": city_input.get("travel_month"),
-                "trip_type": city_input.get("trip_type"),
-                "destination_id": city_input.get("destination_id"),
-                "themes": city_input.get("active_required_themes", ()),
-            }
-    raise SchemaValidationError("state.request or intent.city_select_input is required")
+            return city_input
+    return None
+
+
+def _request_with_city_input(
+    request: Mapping[str, Any],
+    city_input: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    payload = dict(request)
+    if city_input is None:
+        return payload
+    payload.setdefault("country", city_input.get("country"))
+    payload.setdefault("travel_month", city_input.get("travel_month"))
+    payload.setdefault("trip_type", city_input.get("trip_type"))
+    payload.setdefault("destination_id", city_input.get("destination_id"))
+    payload.setdefault("themes", city_input.get("active_required_themes", ()))
+    return payload
+
+
+def _request_from_city_input(city_input: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "request_id": "mock-v2-request",
+        "country": city_input.get("country"),
+        "travel_month": city_input.get("travel_month"),
+        "trip_type": city_input.get("trip_type"),
+        "destination_id": city_input.get("destination_id"),
+        "themes": city_input.get("active_required_themes", ()),
+    }
 
 
 def _clarification_payload(state: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    intent = state.get("intent")
+    if isinstance(intent, Mapping):
+        modify_intent = intent.get("modify_intent")
+        if isinstance(modify_intent, Mapping):
+            clarification = modify_intent.get("clarification")
+            if isinstance(clarification, Mapping):
+                return _modify_clarification_payload(clarification)
+        clarification = intent.get("clarification")
+        if intent.get("intent_type") == "modification" and isinstance(
+            clarification,
+            Mapping,
+        ):
+            return _modify_clarification_payload(clarification)
     festival_gate = state.get("festival_gate")
     if isinstance(festival_gate, Mapping):
         clarification = festival_gate.get("clarification")
@@ -66,6 +105,22 @@ def _clarification_payload(state: Mapping[str, Any]) -> Mapping[str, Any] | None
         if isinstance(clarification, Mapping):
             return clarification
     return None
+
+
+def _modify_clarification_payload(clarification: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(clarification)
+    options = payload.get("options")
+    if isinstance(options, list) and options:
+        return payload
+    payload["options"] = [
+        {
+            "option_id": "revise_modify_query",
+            "label": "수정 요청 다시 입력",
+            "apply": {},
+            "then": "abort",
+        },
+    ]
+    return payload
 
 
 def _planner_output(state: Mapping[str, Any]) -> Mapping[str, Any] | None:
@@ -130,7 +185,16 @@ def _unsupported_conditions(state: Mapping[str, Any]) -> tuple[str, ...]:
     intent = state.get("intent")
     if not isinstance(intent, Mapping):
         return ()
-    value = intent.get("unsupported_conditions")
-    if isinstance(value, (list, tuple)):
-        return tuple(str(item) for item in value)
-    return ()
+    values: list[str] = []
+    _extend_texts(values, intent.get("unsupported_conditions"))
+    _extend_texts(values, intent.get("unsupported_reasons"))
+    modify_intent = intent.get("modify_intent")
+    if isinstance(modify_intent, Mapping):
+        _extend_texts(values, modify_intent.get("unsupported_reasons"))
+    return tuple(values)
+
+
+def _extend_texts(target: list[str], value: Any) -> None:
+    if not isinstance(value, (list, tuple)):
+        return
+    target.extend(str(item) for item in value)

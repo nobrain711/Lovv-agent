@@ -21,8 +21,8 @@ Rules:
 - For "A 말고 B" or "A 빼고 B", put A in disliked_* and B in preferred_*.
 - For "A는 피하고 B에서 C 위주", put A in disliked_region_spans, B in preferred_region_spans, and C in preferred_theme_ids.
 - Region spans may be 시, 군, or 구 names. Preserve qualifiers when present.
-- Example: "대구 동구" -> preferred_region_spans=["대구 동구"].
-- Example: "동구 (대구광역시)" -> preferred_region_spans=["동구 (대구광역시)"].
+- Example: "대구 동구" or "대구광역시 동구" -> preferred_region_spans=["동구 (대구광역시)"].
+- Example: "종로구" -> preferred_region_spans=["종로구"].
 - Example: "평창군이나 경주시" -> preferred_region_spans=["평창군", "경주시"].
 - Do not treat preferred words after "피하고/말고/빼고" as disliked when they appear
   after a new positive phrase such as "B에서", "B로", "B 위주".

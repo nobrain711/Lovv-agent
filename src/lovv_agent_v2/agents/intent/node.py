@@ -6,6 +6,7 @@ from typing import Any
 from lovv_agent_v2.agents.intent.clarify_parser import build_clarify_intent
 from lovv_agent_v2.agents.intent.modify_parser import build_modify_intent
 from lovv_agent_v2.agents.intent.modify_prompt import prompt_modify_intent_from_request
+from lovv_agent_v2.agents.intent.modify_reanchor import modify_state_update
 from lovv_agent_v2.agents.intent.prompt import PromptIntentResult, prompt_intent_from_request
 from lovv_agent_v2.agents.intent.parser import (
     IntentPreferenceResult,
@@ -32,10 +33,7 @@ def intent_node(state: UnifiedAgentState) -> dict[str, Any]:
             case "clarify":
                 return {"intent": build_clarify_intent(request, state)}
             case "modify":
-                modify_intent = _modify_intent(state, request)
-                next_intent = dict(modify_intent)
-                next_intent["modify_intent"] = dict(modify_intent)
-                return {"intent": next_intent}
+                return modify_state_update(intent, _modify_intent(state, request))
             case "confirm":
                 return {"intent": _confirm_intent(request)}
             case "create":

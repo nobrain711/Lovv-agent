@@ -15,6 +15,16 @@ from lovv_agent_v2.core.runtime_state import runtime_value
 from lovv_agent_v2.models.schemas import SchemaValidationError
 from lovv_agent_v2.models.trip_intent import city_select_input_from_trip_intent
 
+THEME_ID_TO_LABEL = {
+    "sea_coast": "바다·해안",
+    "nature_trekking": "자연·트레킹",
+    "history_tradition": "역사·전통",
+    "art_sense": "예술·감성",
+    "healing_rest": "온천·휴양",
+    "food_local": "미식·노포",
+}
+UNSEARCHABLE_PLACE_THEMES = frozenset({"미식·노포"})
+
 
 def planner_input(state: Mapping[str, object]) -> dict[str, object]:
     city_selection = city_selection_result(state)
@@ -40,6 +50,7 @@ def planner_input(state: Mapping[str, object]) -> dict[str, object]:
         "active_themes": string_tuple(
             first_present(passthrough, "active_themes", city_input.get("active_required_themes", ())),
         ),
+        "preferred_themes": preferred_theme_labels(city_input),
         "theme_weights": first_present(passthrough, "theme_weights", city_input.get("theme_weights")),
         "trip_type": trip_type,
         "transport_pref": text(
@@ -79,7 +90,7 @@ def selected_city(state: Mapping[str, object]) -> Mapping[str, object]:
 
 def city_selection_result(state: Mapping[str, object]) -> Mapping[str, object]:
     city_select = optional_mapping(state.get("city_select"))
-    if city_select is None:
+    if city_select is None or not city_select:
         direct_anchor = direct_anchor_city_selection_result(state)
         if direct_anchor is not None:
             return direct_anchor
@@ -168,6 +179,16 @@ def planner_city_input(state: Mapping[str, object]) -> Mapping[str, object]:
         return city_select_input_from_trip_intent(trip_intent)
     city_input = intent.get("city_select_input")
     return city_input if isinstance(city_input, Mapping) else {}
+
+
+def preferred_theme_labels(city_input: Mapping[str, object]) -> tuple[str, ...]:
+    labels: list[str] = []
+    active = set(string_tuple(city_input.get("active_required_themes", ())))
+    for theme_id in string_tuple(city_input.get("preferred_theme_ids", ())):
+        label = THEME_ID_TO_LABEL.get(theme_id, theme_id)
+        if label not in active and label not in UNSEARCHABLE_PLACE_THEMES:
+            labels.append(label)
+    return tuple(dict.fromkeys(labels))
 
 
 def candidate_payloads(

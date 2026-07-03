@@ -13,6 +13,7 @@ from lovv_agent_v2.agents.city_select.retrieval.policy import (
     is_excluded_place_search_theme,
     normalize_attraction_candidate,
     normalize_query_vector,
+    normalize_string_sequence,
     optional_text,
     prune_cities,
     resolve_place_search_theme,
@@ -46,6 +47,8 @@ class DestinationSearchTool:
         ddb_pk: str | None = None,
         theme: str | None = None,
         theme_tags: Sequence[str] | None = None,
+        preferred_city_ids: Sequence[str] = (),
+        disliked_city_ids: Sequence[str] = (),
         top_k: int | None = None,
     ) -> tuple[AttractionCandidate, ...]:
         search_theme = resolve_place_search_theme(theme, theme_tags)
@@ -57,6 +60,8 @@ class DestinationSearchTool:
             city_id=city_id,
             ddb_pk=ddb_pk,
             theme=search_theme,
+            preferred_city_ids=preferred_city_ids,
+            disliked_city_ids=disliked_city_ids,
             top_k=top_k,
             search_budget=self.search_budget,
         )
@@ -87,6 +92,8 @@ def build_attraction_search_request(
     ddb_pk: str | None = None,
     theme: str | None = None,
     theme_tags: Sequence[str] | None = None,
+    preferred_city_ids: Sequence[str] = (),
+    disliked_city_ids: Sequence[str] = (),
     top_k: int | None = None,
     search_budget: SearchBudgetSettings,
 ) -> dict[str, Any]:
@@ -101,6 +108,8 @@ def build_attraction_search_request(
         ddb_pk=ddb_pk,
         theme=theme,
         theme_tags=theme_tags,
+        preferred_city_ids=preferred_city_ids,
+        disliked_city_ids=disliked_city_ids,
     )
     if metadata_filter is not None:
         request["filter"] = metadata_filter
@@ -113,12 +122,20 @@ def build_attraction_filter(
     ddb_pk: str | None = None,
     theme: str | None = None,
     theme_tags: Sequence[str] | None = None,
+    preferred_city_ids: Sequence[str] = (),
+    disliked_city_ids: Sequence[str] = (),
 ) -> dict[str, Any] | None:
     conditions: list[dict[str, Any]] = [{"entity_type": {"$eq": ATTRACTION_ENTITY_TYPE}}]
     normalized_city_id = optional_text(city_id, "city_id")
     if normalized_city_id is not None:
         conditions.append({"city_id": {"$eq": normalized_city_id}})
     optional_text(ddb_pk, "ddb_pk")
+    conditions.extend(
+        _city_id_filter_conditions(
+            preferred_city_ids=preferred_city_ids,
+            disliked_city_ids=disliked_city_ids,
+        ),
+    )
 
     normalized_theme = resolve_place_search_theme(theme, theme_tags)
     if normalized_theme is not None:
@@ -131,6 +148,29 @@ def build_attraction_filter(
     if len(conditions) == 1:
         return conditions[0]
     return {"$and": conditions}
+
+
+def _city_id_filter_conditions(
+    *,
+    preferred_city_ids: Sequence[str],
+    disliked_city_ids: Sequence[str],
+) -> tuple[dict[str, Any], ...]:
+    preferred = _normalized_city_ids(preferred_city_ids, "preferred_city_ids")
+    disliked = _normalized_city_ids(disliked_city_ids, "disliked_city_ids")
+    conditions: list[dict[str, Any]] = []
+    if len(preferred) == 1:
+        conditions.append({"city_id": {"$eq": preferred[0]}})
+    elif preferred:
+        conditions.append({"city_id": {"$in": list(preferred)}})
+    if len(disliked) == 1:
+        conditions.append({"city_id": {"$ne": disliked[0]}})
+    elif disliked:
+        conditions.append({"city_id": {"$nin": list(disliked)}})
+    return tuple(conditions)
+
+
+def _normalized_city_ids(values: Sequence[str], field_name: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(normalize_string_sequence(values, field_name)))
 
 
 def _resolve_top_k(top_k: int | None, search_budget: SearchBudgetSettings) -> int:

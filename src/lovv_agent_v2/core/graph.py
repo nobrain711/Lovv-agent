@@ -40,8 +40,8 @@ def compile_v2_graph_with_nodes(
     workflow.add_node("festival_verifier", festival_verifier_node)
     workflow.add_node("explain_itinerary", explain_itinerary_node)
     workflow.add_node("response_packager", response_packager_node)
-    city_select_subgraph = compile_city_select_subgraph(checkpointer=checkpointer)
-    planner_subgraph = compile_planner_subgraph(checkpointer=checkpointer)
+    city_select_subgraph = compile_city_select_subgraph()
+    planner_subgraph = compile_planner_subgraph()
     workflow.add_node("city_select", city_select_subgraph)
     workflow.add_node("planner", planner_subgraph)
 

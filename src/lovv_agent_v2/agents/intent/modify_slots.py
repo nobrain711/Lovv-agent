@@ -7,6 +7,7 @@ from typing import Any
 from lovv_agent_v2.agents.intent.modify_replacement_query import (
     replacement_query_fields,
 )
+from lovv_agent_v2.agents.intent.modify_current_order import current_order
 from lovv_agent_v2.agents.intent.parser import parse_initial_query
 
 
@@ -59,18 +60,6 @@ def _operation_with_id(operation: Mapping[str, Any], index: int) -> dict[str, An
         **operation,
         "op_id": f"op-{index}",
     }
-
-
-def current_order(
-    request: Mapping[str, Any],
-    state: Mapping[str, Any],
-) -> tuple[Mapping[str, Any], ...]:
-    value = request.get("currentOrder", request.get("current_order"))
-    if value is None:
-        value = state.get("currentOrder", state.get("current_order"))
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        return ()
-    return tuple(item for item in value if isinstance(item, Mapping))
 
 
 def _targeted_segments(raw_query: str) -> tuple[str, ...]:

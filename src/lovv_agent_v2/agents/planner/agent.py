@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from lovv_agent_v2.agents.planner.steps.route_days.payloads import route_payload, selection_payload
@@ -30,6 +31,7 @@ class PlannerAgentRequest:
     transport_pref: str
     min_count: int
     target_count: int
+    preferred_themes: tuple[str, ...] = ()
     raw_query_vector: tuple[float, ...] = ()
     fallback_raw_places: tuple[Mapping[str, object], ...] = ()
     fallback_soft_places: tuple[Mapping[str, object], ...] = ()
@@ -76,18 +78,11 @@ class PlannerAgent:
                 ),
             }
 
-        raw_places = _candidate_payloads(
-            runtime.destination_search.search_candidates(
-                _raw_query_vector(request, runtime),
-                top_k=PLANNER_RETRIEVAL_TOP_K,
-                city_id=request.city_id,
-                ddb_pk=None,
-                theme=None,
-            ),
-            similarity_key="raw_similarity",
+        raw_places, soft_places = _retrieve_raw_and_soft(
+            request,
+            runtime,
         )
         raw_places = (*seed_places, *raw_places, *request.festival_places)
-        soft_places = _soft_channel(request, runtime)
         return {
             "raw_places": raw_places,
             "soft_places": soft_places,
@@ -111,6 +106,7 @@ class PlannerAgent:
                 soft_places=_mapping_sequence(place_pool.get("soft_places")),
                 seeds=request.seeds,
                 active_themes=request.active_themes,
+                secondary_themes=request.preferred_themes,
                 theme_weights=request.theme_weights,
                 trip_type=request.trip_type,
                 target_count=request.target_count,
@@ -149,6 +145,32 @@ class PlannerAgent:
             ),
             route_payload(routed, reserve),
         )
+
+
+def _retrieve_raw_and_soft(
+    request: PlannerAgentRequest,
+    runtime: PlannerRuntimeTools,
+) -> tuple[tuple[Mapping[str, object], ...], tuple[Mapping[str, object], ...]]:
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        raw_future = executor.submit(_raw_channel, request, runtime)
+        soft_future = executor.submit(_soft_channel, request, runtime)
+        return raw_future.result(), soft_future.result()
+
+
+def _raw_channel(
+    request: PlannerAgentRequest,
+    runtime: PlannerRuntimeTools,
+) -> tuple[Mapping[str, object], ...]:
+    return _candidate_payloads(
+        runtime.destination_search.search_candidates(
+            _raw_query_vector(request, runtime),
+            top_k=PLANNER_RETRIEVAL_TOP_K,
+            city_id=request.city_id,
+            ddb_pk=None,
+            theme=None,
+        ),
+        similarity_key="raw_similarity",
+    )
 
 
 def _soft_channel(
@@ -257,6 +279,7 @@ def _retrieve_audit(
         "ddb_pk": request.ddb_pk,
         "raw_channel_theme": None,
         "soft_channel_theme": None,
+        "preferred_theme_channels": [],
         "raw_count": len(raw_places),
         "soft_count": len(soft_places),
         "festival_seed_count": festival_seed_count,

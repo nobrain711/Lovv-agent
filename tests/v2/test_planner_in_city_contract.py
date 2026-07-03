@@ -269,7 +269,8 @@ def test_route_days_node_uses_snap_matrix_and_excludes_only_unroutable() -> None
     assert audit["duration_unit"] == "minutes"
     assert audit["matrix_provider"] == "fake"
     assert "missing-coords" in cast(tuple[str, ...], audit["unroutable_place_ids"])
-    assert "far-leg" in cast(tuple[str, ...], audit["trimmed_place_ids"])
+    assert audit["day_limit_min"] == 180.0
+    assert audit["trim_floor_policy"] == "preserve_min_day_place_targets"
 
 
 def test_assemble_itinerary_node_returns_structured_audit_and_thin_city_notice() -> None:

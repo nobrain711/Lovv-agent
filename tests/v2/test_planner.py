@@ -88,6 +88,56 @@ def test_build_working_set_adds_only_on_theme_soft_places() -> None:
     assert result.audit["soft_off_theme_excluded_count"] == 1
 
 
+def test_build_working_set_keeps_on_theme_soft_tail_without_relative_cut() -> None:
+    raw_places = [_place("sea-1", "Sea 1", 0.80, "바다·해안")]
+    soft_places = [
+        _place("history-top", "향교", 0.10, "역사·전통", soft_sim=0.90),
+        _place("history-tail", "고택", 0.10, "역사·전통", soft_sim=0.20),
+    ]
+
+    result = build_working_set(
+        PlannerSelectionInput(
+            raw_places=raw_places,
+            soft_places=soft_places,
+            seeds=(),
+            active_themes=("바다·해안", "역사·전통"),
+            theme_weights=None,
+            trip_type="2d1n",
+            target_count=3,
+            min_count=3,
+        ),
+    )
+
+    assert {place.place_id for place in result.places} == {
+        "sea-1",
+        "history-top",
+        "history-tail",
+    }
+    assert result.audit["soft_relevance_policy"] == "disabled_use_theme_gate"
+
+
+def test_build_working_set_backfills_preferred_theme_after_active_theme() -> None:
+    result = build_working_set(
+        PlannerSelectionInput(
+            raw_places=[
+                _place("sea-1", "Sea 1", 0.90, "바다·해안"),
+                _place("history-1", "History 1", 0.80, "역사·전통"),
+            ],
+            soft_places=(),
+            seeds=(),
+            active_themes=("바다·해안",),
+            secondary_themes=("역사·전통",),
+            theme_weights=None,
+            trip_type="daytrip",
+            target_count=2,
+        ),
+    )
+
+    assert [place.place_id for place in result.places] == ["sea-1", "history-1"]
+    assert result.audit["preferred_theme_backfill_count"] == 1
+    assert result.audit["theme_scope_policy"] == "active_theme_primary_preferred_theme_secondary"
+
+
 def test_build_working_set_blends_raw_and_soft_scores_for_anchored_overlap() -> None:
     raw_places = [
         _place("sea-anchor", "Sea Anchor", 0.80, "바다·해안"),

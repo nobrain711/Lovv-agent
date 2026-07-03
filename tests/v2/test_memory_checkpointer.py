@@ -44,12 +44,5 @@ def test_build_checkpointer_passes_only_memory_id_to_agentcore_saver(
 
     assert isinstance(saver, FakeAgentCoreMemorySaver)
     assert FakeAgentCoreMemorySaver.calls == [
-        (
-            (),
-            {
-                "memory_id": "arn:aws:bedrock-agentcore:us-east-1:123456789012:memory/test",
-                "event_expiry_days": 30,
-                "kms_key_arn": "arn:aws:kms:us-east-1:123456789012:key/test",
-            },
-        )
+        (("arn:aws:bedrock-agentcore:us-east-1:123456789012:memory/test",), {})
     ]

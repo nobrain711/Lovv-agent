@@ -54,6 +54,8 @@ def test_unified_agent_state_exposes_v2_23_top_level_groups() -> None:
         "routing",
         "memory",
         "trace",
+        "runtime",
+        "itinerary_explanation_runtime",
     }
 
 

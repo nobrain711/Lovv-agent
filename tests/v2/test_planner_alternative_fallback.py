@@ -158,7 +158,7 @@ def test_direct_anchor_without_city_select_does_not_retry_alternative_city() -> 
         "planner": {"validation_result": {"planner_status_gate": "insufficient_candidates"}},
     }
 
-    assert should_retry_alternative_city(state) is False
+    assert not any(should_retry_alternative_city(item) for item in (state, {**state, "city_select": {}}))
 
 
 def _state(

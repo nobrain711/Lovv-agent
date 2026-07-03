@@ -35,8 +35,12 @@
 | 34 | `V2_34_MODIFY_INTENT_SCHEMA.md` | **수정 Intent Agent 출력 스키마(slot_replace/city_change/backlog + seed same-theme 정책)** |
 | 35 | `V2_35_ROUTE_DAYS_EXPLANATION.md` | **Planner route_days 일자 배치 알고리즘 + smoke 사례 설명** |
 | 36 | `V2_36_INTERRUPT_HANDLING_MATRIX.md` | **interrupt option/apply/then 처리 matrix와 수락 기준** |
+| 37 | `V2_37_PROFILE_RDS_IMPLEMENTATION_DIRECTIVE.md` | **Profile Agent RDS 연동 구현 지시서(theme weight read/write)** |
 | 38 | `V2_38_INTENT_FRONTEND_INPUT_CONTRACT.md` | **Frontend → Intent 입력 계약(create/clarify/modify/confirm + request-owned field 경계)** |
 | 39 | `V2_39_INTENT_PROCESSING_OUTPUT_SCHEMA.md` | **Intent 처리/출력 state 계약(entryType dispatch + downstream owner 경계)** |
+| 40 | `V2_40_YEOSU_ROUTE_DAYS_CASE.md` | **여수 route_days 중요 사례: 유사도 나열 대비 이동시간 기반 군집 배치 효과** |
+| 41 | `V2_41_ROUTE_DAYS_SMOKE_CASEBOOK.md` | **이 스레드 live smoke 변화 사례집: insufficient 완화·이동 제한·남은 품질 이슈** |
+| 42 | `V2_42_MODIFY_TROUBLESHOOTING.md` | **modify city-change live timeout 원인과 supervisor loop fix + 장소 replace 설계 메모** |
 | — | `V2_DECISIONS_LOG.md` | Step 4 결정 로그(왜 그렇게 정했나) |
 | — | `../../tasks/results/v2_intent_mocks/` | V2 입력 mock(생성14·수정4) + 핸드오프 |
 

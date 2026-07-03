@@ -130,6 +130,7 @@ def _itinerary_item(
         "source": place.get("source"),
         "ddb_pk": place.get("ddb_pk"),
         "ddb_sk": place.get("ddb_sk"),
+        "isSeed": place.get("is_seed") is True,
         "reason_code": _reason_code(place),
         "evidence": {
             "similarity": place.get("similarity", place.get("raw_similarity", 0.0)),
