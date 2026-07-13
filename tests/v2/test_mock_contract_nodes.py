@@ -4,23 +4,22 @@ from lovv_agent_v2.agents.mock_contract.nodes import mock_intent_node, mock_prof
 from lovv_agent_v2.core.mock_graph import compile_v2_mock_graph
 
 
-def test_mock_intent_node_normalizes_generation_intent_output() -> None:
+def test_mock_intent_node_normalizes_front_request() -> None:
     state = {
-        "request": {"request_id": "case-1"},
-        "intent": {
-            "intent_output": {
-                "country": "KR",
-                "travel_month": 9,
-                "travel_year": 2026,
-                "trip_type": "2d1n",
-                "active_required_themes": ["바다·해안"],
-                "include_festivals": False,
-                "cleaned_raw_query": "조용한 바다",
-                "soft_preference_query": "한적한 해안",
-                "destination_id": None,
-                "user_location": None,
-            },
+        "request": {
+            "request_id": "case-1",
+            "country": "KR",
+            "travel_month": 9,
+            "travel_year": 2026,
+            "trip_type": "2d1n",
+            "active_required_themes": ["바다·해안"],
+            "include_festivals": False,
+            "cleaned_raw_query": "조용한 바다",
+            "soft_preference_query": "한적한 해안",
+            "destination_id": None,
+            "user_location": None,
         },
+        "intent": {},
         "profile": {},
     }
 

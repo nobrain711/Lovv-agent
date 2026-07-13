@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lovv_agent_v2.agents.planner.node import planner_node
+from lovv_agent_v2.agents.planner.subgraph import compile_planner_subgraph
 from lovv_agent_v2.agents.planner.steps.route_days.place_selection import (
     PlannerSelectionInput,
     build_working_set,
@@ -294,7 +294,7 @@ def test_build_working_set_balances_requested_themes_without_profile() -> None:
     assert result.audit["theme_counts"] == {"바다·해안": 2, "역사·문화": 2}
 
 
-def test_planner_node_writes_v2_planner_output_from_city_select_state() -> None:
+def test_planner_subgraph_writes_v2_planner_output_from_city_select_state() -> None:
     state = {
         "intent": {
             "city_select_input": {
@@ -336,7 +336,7 @@ def test_planner_node_writes_v2_planner_output_from_city_select_state() -> None:
         },
     }
 
-    result = planner_node(state)
+    result = compile_planner_subgraph().invoke(state)
 
     planner = result["planner"]["planner_output"]
     assert planner["validation_result"]["planner_status_gate"] == "ok"

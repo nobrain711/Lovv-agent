@@ -1,0 +1,16 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "lineColor": "#475569"}}}%%
+flowchart TD
+  State["request + planner_output<br/>selected_city + clarification"] --> Response["Response Packager Agent"]
+  Response --> Packager["ResponsePackagerInput<br/>payload assembly"]
+  Packager --> Decision{"clarification needed?"}
+  Decision -->|"no"| Final["response_payload"]
+  Decision -->|"yes"| Interrupt["END_WAIT_USER<br/>LangGraph interrupt"]
+  Interrupt --> Memory["AgentCoreMemorySaver<br/>AgentCore Memory"]
+  Interrupt --> Resume["next call<br/>Command(resume=...)"]
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
+  classDef tool fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px;
+  class Response agent;
+  class Packager,Memory tool;
+  class Final,Interrupt,Resume output;

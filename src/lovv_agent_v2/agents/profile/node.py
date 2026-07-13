@@ -122,8 +122,6 @@ def _first_text(mapping: Mapping[str, Any], field_names: tuple[str, ...]) -> str
 
 def _city_select_input(intent: Mapping[str, Any]) -> Mapping[str, Any]:
     city_input = intent.get("city_select_input")
-    if city_input is None:
-        city_input = intent.get("intent_output")
     if not isinstance(city_input, Mapping):
         raise SchemaValidationError("intent.city_select_input is required")
     return city_input

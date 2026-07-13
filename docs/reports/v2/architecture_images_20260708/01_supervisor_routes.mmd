@@ -1,0 +1,18 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#f8fafc", "primaryBorderColor": "#334155", "lineColor": "#475569"}}}%%
+flowchart TD
+  Intent["Intent Agent<br/>request normalized"] --> Supervisor["Supervisor Router<br/>deterministic route<br/>routing.next_node"]
+
+  Supervisor --> Agents["Worker Agents<br/>Profile<br/>Festival Verifier<br/>City Select<br/>Planner<br/>Explain Itinerary<br/>Weather Alternative<br/>Response Packager"]
+  Agents --> Update["state update"]
+  Update --> Supervisor
+
+  Supervisor --> End["Graph End"]
+  Supervisor -. "Response Packager interrupt" .-> Wait["Wait for User"]
+  Wait -. "resume command" .-> Intent
+
+  classDef supervisor fill:#ede9fe,stroke:#7c3aed,stroke-width:3px,color:#2e1065;
+  classDef agent fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#0f172a;
+  classDef terminal fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d;
+  class Supervisor,Update supervisor;
+  class Intent,Agents agent;
+  class End,Wait terminal;

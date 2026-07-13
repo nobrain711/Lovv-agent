@@ -1,0 +1,24 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "lineColor": "#475569"}}}%%
+flowchart LR
+  Request["Request<br/>create / clarify / modify / confirm"] --> Intent["Intent Agent"]
+  Intent --> Shape["entry_type 분기"]
+  Shape --> Create["create<br/>CitySelectInput 생성"]
+  Shape --> Clarify["clarify<br/>build_clarify_intent"]
+  Shape --> Modify["modify<br/>resolve_modify_intent"]
+  Shape --> Confirm["confirm<br/>confirmation intent"]
+
+  Create --> Runtime["IntentPromptRuntime"]
+  Modify --> Runtime
+  Runtime --> Bedrock["Bedrock Converse<br/>Intent LLM"]
+  Bedrock --> ModifyUpdate["modify_state_update"]
+  Create --> Output["intent state"]
+  Clarify --> Output
+  ModifyUpdate --> Output
+  Confirm --> Output
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
+  classDef tool fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px;
+  class Intent agent;
+  class Runtime,Bedrock,ModifyUpdate tool;
+  class Output output;

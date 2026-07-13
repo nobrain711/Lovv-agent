@@ -67,7 +67,7 @@ def prompt_intent_from_request(
 
 def build_intent_prompt_request(request: Mapping[str, Any]) -> dict[str, Any]:
     payload = {
-        "task": "Extract Lovv V2 intent_output from this request.",
+        "task": "Extract Lovv V2 intent fields from this request.",
         "api_request": dict(request),
     }
     request_payload = build_structured_converse_request(
@@ -153,7 +153,6 @@ def validate_intent_prompt_output(
     )
     city_input = CitySelectInput.from_mapping(city_input_payload).to_dict()
     city_input["active_required_themes"] = list(city_input["active_required_themes"])
-    updates["intent_output"] = dict(city_input)
     return PromptIntentResult(city_select_input=city_input, intent_updates=updates)
 
 

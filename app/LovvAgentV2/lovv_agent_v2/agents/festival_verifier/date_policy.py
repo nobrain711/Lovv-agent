@@ -73,21 +73,24 @@ def _derive_from_month_window(
     end_month = _month_point_from_value(
         _first_optional(payload, "event_end_date", "end_date"),
     )
-    if start_month is None:
-        return "confirmed" if candidate_matches_month(payload, travel_month) else "unknown"
-    if (
-        target_year is not None
-        and start_month.year is not None
-        and start_month.year != target_year
-    ):
+    date_point = start_month or end_month
+    explicit_year = _year_from_value(
+        _first_optional(payload, "event_year", "festival_year", "year"),
+    )
+    data_year = (
+        start_month.year
+        if start_month is not None and start_month.year is not None
+        else explicit_year
+    )
+    if data_year is None and end_month is not None:
+        data_year = end_month.year
+    if not candidate_matches_month(payload, travel_month):
+        return "skipped"
+    if "month" not in payload and date_point is not None and date_point.month != travel_month:
+        return "skipped"
+    if target_year is not None and data_year is not None and data_year != target_year:
         return "outdated"
-    if _overlaps_month(
-        start_month=start_month,
-        end_month=end_month,
-        travel_month=travel_month,
-    ):
-        return "confirmed"
-    return "skipped"
+    return "confirmed"
 
 
 def _month_point_from_value(value: Any) -> FestivalMonthPoint | None:
@@ -115,26 +118,20 @@ def _month_point_from_value(value: Any) -> FestivalMonthPoint | None:
     raise SchemaValidationError("festival date must include a month")
 
 
-def _overlaps_month(
-    *,
-    start_month: FestivalMonthPoint,
-    end_month: FestivalMonthPoint | None,
-    travel_month: int,
-) -> bool:
-    if end_month is None or start_month.year is None or end_month.year is None:
-        return start_month.month == travel_month
-    if (end_month.year, end_month.month) < (start_month.year, start_month.month):
-        return start_month.month == travel_month
-    year = start_month.year
-    month = start_month.month
-    while (year, month) <= (end_month.year, end_month.month):
-        if month == travel_month:
-            return True
-        month += 1
-        if month > 12:
-            month = 1
-            year += 1
-    return False
+def _year_from_value(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int) and value > 999:
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        match = re.search(r"\d{4}", text)
+        if match is not None:
+            return int(match.group(0))
+    point = _month_point_from_value(value)
+    return None if point is None else point.year
 
 
 def _first_optional(record: Mapping[str, Any], *field_names: str) -> Any:

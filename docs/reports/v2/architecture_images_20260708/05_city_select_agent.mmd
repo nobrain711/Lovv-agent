@@ -1,0 +1,17 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "lineColor": "#475569"}}}%%
+flowchart LR
+  Input["CitySelectInput<br/>themes / month / destination"] --> City["City Select Agent"]
+  City --> Retrieval["retrieval node"]
+  Retrieval --> Embedding["Titan Embedding"]
+  Retrieval --> Vector["S3 Vectors<br/>kr-tour-domain-v2"]
+  Retrieval --> DomainDDB["DynamoDB hydrate<br/>TourKoreaDomainDataV2"]
+  Vector --> Scoring["scoring_and_selection<br/>theme + geo + profile weights"]
+  DomainDDB --> Scoring
+  Scoring --> Output["selected_city<br/>seeds + planner_hints"]
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
+  classDef tool fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px;
+  class City agent;
+  class Retrieval,Embedding,Vector,DomainDDB,Scoring tool;
+  class Output output;

@@ -4,8 +4,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from lovv_agent_v2.agents.intent.clarify_parser import build_clarify_intent
-from lovv_agent_v2.agents.intent.modify_parser import build_modify_intent
-from lovv_agent_v2.agents.intent.modify_prompt import prompt_modify_intent_from_request
+from lovv_agent_v2.agents.intent.clarifications import (
+    PREFERENCE_CLARIFYING_QUESTION,
+    set_contradiction_clarification,
+    set_unsupported_region_clarification,
+)
+from lovv_agent_v2.agents.intent.modify_dispatch import resolve_modify_intent
 from lovv_agent_v2.agents.intent.modify_reanchor import modify_state_update
 from lovv_agent_v2.agents.intent.prompt import PromptIntentResult, prompt_intent_from_request
 from lovv_agent_v2.agents.intent.parser import (
@@ -13,39 +17,42 @@ from lovv_agent_v2.agents.intent.parser import (
     clean_preference_query,
     parse_initial_query,
 )
-from lovv_agent_v2.agents.intent.tools import intent_prompt_runtime_from_state
+from lovv_agent_v2.agents.intent.request_shape import entry_type, has_create_request_fields
+from lovv_agent_v2.tools.runtime_extractors import intent_prompt_runtime_from_state
 from lovv_agent_v2.agents.intent.validator import validate_preference_sets
 from lovv_agent_v2.core.state import UnifiedAgentState
 from lovv_agent_v2.models.city_identity import enrich_city_select_identity
 from lovv_agent_v2.models.schemas import CitySelectInput, SchemaValidationError
-
-_PREFERENCE_CLARIFYING_QUESTION = (
-    "선호와 비선호가 동시에 언급된 테마나 지역이 있어 우선순위를 확인해야 합니다."
-)
 
 
 def intent_node(state: UnifiedAgentState) -> dict[str, Any]:
     intent = _intent_payload(state)
     request = state.get("request")
     if isinstance(request, Mapping):
-        entry_type = _entry_type(request)
-        match entry_type:
+        match entry_type(request):
             case "clarify":
-                return {"intent": build_clarify_intent(request, state)}
+                if has_create_request_fields(request):
+                    pass
+                else:
+                    return {"intent": build_clarify_intent(request, state)}
             case "modify":
-                return modify_state_update(intent, _modify_intent(state, request))
+                return modify_state_update(intent, resolve_modify_intent(state, request), state)
             case "confirm":
                 return {"intent": _confirm_intent(request)}
             case "create":
                 pass
             case unreachable:
                 _ = unreachable
-    existing_input = _existing_city_select_input(intent)
+    fresh_create_request = isinstance(request, Mapping) and entry_type(request) in {
+        "create",
+        "clarify",
+    }
+    existing_input = None if fresh_create_request else _existing_city_select_input(intent)
     prompt_result = _prompt_result(state, request) if existing_input is None else None
     city_input = (
         prompt_result.city_select_input
         if prompt_result is not None
-        else _city_select_input(intent, request)
+        else _city_select_input({} if fresh_create_request else intent, request)
     )
     enriched_input = enrich_city_select_identity(city_input)
     normalized_input = CitySelectInput.from_mapping(enriched_input).to_dict()
@@ -55,7 +62,7 @@ def intent_node(state: UnifiedAgentState) -> dict[str, Any]:
     normalized_input["cleaned_raw_query"] = clean_preference_query(
         normalized_input["cleaned_raw_query"],
     )
-    next_intent = dict(intent)
+    next_intent = {} if fresh_create_request else dict(intent)
     if prompt_result is not None:
         next_intent.update(prompt_result.intent_updates)
         _reconcile_preference_fields(next_intent)
@@ -78,6 +85,20 @@ def intent_node(state: UnifiedAgentState) -> dict[str, Any]:
         _apply_preference_result(
             next_intent, parse_initial_query(_request_raw_query(request))
         )
+    set_unsupported_region_clarification(
+        next_intent,
+        request if isinstance(request, Mapping) else None,
+        normalized_input,
+    )
+    if fresh_create_request:
+        return {
+            "intent": next_intent,
+            "festival_gate": {},
+            "city_select": {},
+            "planner": {},
+            "response": {},
+            "routing": {},
+        }
     return {"intent": next_intent}
 
 
@@ -86,24 +107,6 @@ def _intent_payload(state: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(intent, Mapping):
         return dict(intent)
     return {}
-
-
-def _entry_type(request: Mapping[str, Any]) -> str:
-    value = request.get("entryType", request.get("entry_type", "create"))
-    if not isinstance(value, str):
-        return "create"
-    normalized = value.strip().lower().replace("-", "_")
-    match normalized:
-        case "clarify":
-            return "clarify"
-        case "modify":
-            return "modify"
-        case "confirm":
-            return "confirm"
-        case "create" | "chat" | "":
-            return "create"
-        case _:
-            return "create"
 
 
 def _confirm_intent(request: Mapping[str, Any]) -> dict[str, Any]:
@@ -127,22 +130,6 @@ def _text_or_none(value: Any) -> str | None:
     return normalized or None
 
 
-def _modify_intent(
-    state: Mapping[str, Any],
-    request: Mapping[str, Any],
-) -> dict[str, Any]:
-    prompt_runtime = intent_prompt_runtime_from_state(state)
-    if prompt_runtime.runtime is not None:
-        prompt_result = prompt_modify_intent_from_request(
-            runtime=prompt_runtime.runtime,
-            request=request,
-            retry_limit=prompt_runtime.schema_retry_limit,
-        )
-        if prompt_result is not None:
-            return prompt_result
-    return build_modify_intent(request, state)
-
-
 def _city_select_input(
     intent: Mapping[str, Any],
     request: Any,
@@ -157,8 +144,6 @@ def _city_select_input(
 
 def _existing_city_select_input(intent: Mapping[str, Any]) -> Mapping[str, Any] | None:
     value = intent.get("city_select_input")
-    if value is None:
-        value = intent.get("intent_output")
     return value if isinstance(value, Mapping) else None
 
 
@@ -194,18 +179,15 @@ def _city_select_input_from_request(request: Mapping[str, Any]) -> dict[str, Any
             "includeFestivals",
         ),
         "cleaned_raw_query": preference_result.cleaned_raw_query,
-        "soft_preference_query": request.get(
-            "soft_preference_query",
-            request.get("softPreferenceQuery", request.get("soft_query", "")),
-        ),
+        "soft_preference_query": "",
         "unsupported_conditions": request.get("unsupported_conditions", ()),
         "destination_id": request.get("destination_id", request.get("destinationId")),
         "city_key": request.get("city_key", request.get("cityKey")),
         "ddb_pk": request.get("ddb_pk", request.get("ddbPk")),
         "user_location": request.get("user_location", request.get("userLocation")),
         "execution_mode": request.get("execution_mode", "city_discovery"),
-        "congestion_pref": request.get("congestion_pref", "neutral"),
-        "transport_pref": request.get("transport_pref", "unknown"),
+        "congestion_pref": "neutral",
+        "transport_pref": "unknown",
         "preferred_theme_ids": preference_result.preferred_theme_ids,
         "disliked_theme_ids": preference_result.disliked_theme_ids,
         "preferred_region_ids": preference_result.preferred_region_ids,
@@ -256,6 +238,7 @@ def _apply_preference_result(
     intent.setdefault("needs_clarification", preference_result.needs_clarification)
     intent.setdefault("clarifying_question", preference_result.clarifying_question)
     intent.setdefault("contradiction_reasons", preference_result.contradiction_reasons)
+    set_contradiction_clarification(intent)
 
 
 def _reconcile_preference_fields(intent: dict[str, Any]) -> None:
@@ -269,8 +252,9 @@ def _reconcile_preference_fields(intent: dict[str, Any]) -> None:
         intent.setdefault("contradiction_reasons", ())
         return
     intent["needs_clarification"] = True
-    intent["clarifying_question"] = _PREFERENCE_CLARIFYING_QUESTION
+    intent["clarifying_question"] = PREFERENCE_CLARIFYING_QUESTION
     intent["contradiction_reasons"] = validation.contradiction_reasons
+    set_contradiction_clarification(intent)
 
 
 def _text_tuple(value: Any) -> tuple[str, ...]:

@@ -9,10 +9,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from lovv_agent_v2.agents.city_select.domain.contracts import AttractionCandidate
+    class AttractionCandidate(Protocol):
+        place_id: str
+        city_id: str
+        title: str
+        theme_tags: tuple[str, ...]
+        latitude: float | None
+        longitude: float | None
+        ddb_pk: str | None
+        ddb_sk: str | None
 
 from lovv_agent_v2.infra.config import SearchBudgetSettings
 from lovv_agent_v2.models.schemas import SchemaValidationError

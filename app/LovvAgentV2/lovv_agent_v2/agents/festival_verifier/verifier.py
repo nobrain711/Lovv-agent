@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from lovv_agent_v2.agents.festival_verifier.audit import build_festival_audit
 from lovv_agent_v2.agents.festival_verifier.clarification_options import (
     anchor_conflict_clarification,
     festival_none_clarification,
@@ -21,6 +22,14 @@ from lovv_agent_v2.agents.festival_verifier.gate_result import (
     FestivalGateResult,
     FestivalStatusCandidate,
 )
+from lovv_agent_v2.agents.festival_verifier.payloads import (
+    unique_city_ids,
+    verified_city_payloads,
+)
+from lovv_agent_v2.agents.festival_verifier.theme_policy import (
+    candidate_matches_requested_theme,
+    specific_theme_tokens,
+)
 from lovv_agent_v2.models.clarification import Clarification
 from lovv_agent_v2.models.schemas import SchemaValidationError
 
@@ -30,6 +39,7 @@ def build_festival_gate_result(
     travel_month: int,
     target_year: int | None,
     candidates: Sequence[Mapping[str, Any]],
+    theme_pool: Sequence[str] = (),
     requested_destination_id: str | None = None,
 ) -> FestivalGateResult:
     if not include_festivals:
@@ -47,14 +57,18 @@ def build_festival_gate_result(
         for candidate in status_candidates
         if candidate_matches_month(candidate.payload, normalized_month)
     )
-    confirmed = tuple(item for item in filtered if item.date_status == "confirmed")
-    tentative = tuple(item for item in filtered if item.date_status == "tentative")
+    theme_matched = _theme_matched_candidates(
+        filtered,
+        requested_themes=specific_theme_tokens(theme_pool),
+    )
+    confirmed = tuple(item for item in theme_matched if item.date_status == "confirmed")
+    tentative = tuple(item for item in theme_matched if item.date_status == "tentative")
     excluded = tuple(
         item
         for item in filtered
         if item.date_status in {"outdated", "unknown", "skipped"}
     )
-    audit = _audit(
+    audit = build_festival_audit(
         travel_month=normalized_month,
         target_year=normalized_year,
         requested_destination_id=requested_city,
@@ -150,13 +164,13 @@ def _ok_result(
     candidates: Sequence[FestivalStatusCandidate],
     audit: dict[str, Any],
 ) -> FestivalGateResult:
-    allowed_city_ids = _unique_city_ids(candidates)
+    allowed_city_ids = unique_city_ids(candidates)
     return FestivalGateResult(
         status="ok",
         execution_mode=execution_mode,
         tier=tier,
         allowed_city_ids=allowed_city_ids,
-        verified_festival_cities=_verified_city_payloads(candidates),
+        verified_festival_cities=verified_city_payloads(candidates),
         clarification=None,
         audit=audit,
         candidates=tuple(item.payload for item in candidates),
@@ -199,62 +213,18 @@ def _status_candidate(
     return FestivalStatusCandidate(payload=payload, date_status=status)
 
 
-def _audit(
-    *,
-    travel_month: int,
-    target_year: int | None,
-    requested_destination_id: str | None,
-    confirmed: Sequence[FestivalStatusCandidate],
-    tentative: Sequence[FestivalStatusCandidate],
-    excluded: Sequence[FestivalStatusCandidate],
-) -> dict[str, Any]:
-    return {
-        "travel_month": travel_month,
-        "target_year": target_year,
-        "requested_destination_id": requested_destination_id,
-        "candidate_counts": {
-            "confirmed": len(confirmed),
-            "tentative": len(tentative),
-            "excluded": len(excluded),
-        },
-    }
-
-
-def _verified_city_payloads(
+def _theme_matched_candidates(
     candidates: Sequence[FestivalStatusCandidate],
-) -> tuple[dict[str, Any], ...]:
-    grouped: dict[str, dict[str, Any]] = {}
-    for candidate in candidates:
-        city = grouped.setdefault(
-            candidate.city_id,
-            {
-                "ddb_pk": _city_ddb_pk(candidate.payload, candidate.city_id),
-                "city_id": candidate.city_id,
-                "city_name": candidate.city_name,
-                "festivals": [],
-            },
-        )
-        city["festivals"].append(candidate.payload)
-    return tuple(grouped.values())
-
-
-def _unique_city_ids(candidates: Sequence[FestivalStatusCandidate]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    city_ids: list[str] = []
-    for candidate in candidates:
-        if candidate.city_id in seen:
-            continue
-        seen.add(candidate.city_id)
-        city_ids.append(candidate.city_id)
-    return tuple(city_ids)
-
-
-def _city_ddb_pk(payload: Mapping[str, Any], city_id: str) -> str:
-    for key in ("ddb_pk", "city_key", "PK", "pk"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return f"CITY#{city_id}"
+    *,
+    requested_themes: frozenset[str],
+) -> tuple[FestivalStatusCandidate, ...]:
+    if not requested_themes:
+        return tuple(candidates)
+    return tuple(
+        candidate
+        for candidate in candidates
+        if candidate_matches_requested_theme(candidate.payload, requested_themes)
+    )
 
 
 def _required_text(value: Any, field_name: str) -> str:

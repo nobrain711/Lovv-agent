@@ -5,10 +5,11 @@ from collections.abc import Sequence
 
 from lovv_agent_v2.agents.festival_verifier import agent as festival_agent_module
 from lovv_agent_v2.agents.festival_verifier import node as festival_node_module
-from lovv_agent_v2.agents.festival_verifier import tools as festival_tools_module
+from lovv_agent_v2.tools import runtime_containers as festival_tools_containers_module
+from lovv_agent_v2.tools import factories as festival_tools_factories_module
 from lovv_agent_v2.agents.festival_verifier.agent import FestivalVerifierAgent
 from lovv_agent_v2.agents.festival_verifier.contracts import FestivalVerifierInput
-from lovv_agent_v2.agents.festival_verifier.tools import FestivalVerifierTools
+from lovv_agent_v2.tools.runtime_containers import FestivalVerifierTools
 from lovv_agent_v2.core.runtime_state import invocation_runtime
 from lovv_agent_v2.infra.dynamo_lookup import FestivalSeedResult
 from lovv_agent_v2.models.schemas import CitySelectInput
@@ -38,11 +39,13 @@ def _city_input() -> CitySelectInput:
 def test_festival_agent_and_tools_do_not_import_unified_state() -> None:
     # Given: V2_30 requires agent/tool layers to be independent from LangGraph state.
     agent_source = inspect.getsource(festival_agent_module)
-    tools_source = inspect.getsource(festival_tools_module)
+    tools_containers_source = inspect.getsource(festival_tools_containers_module)
+    tools_factories_source = inspect.getsource(festival_tools_factories_module)
 
     # When/Then: neither layer imports the UnifiedAgentState boundary type.
     assert "UnifiedAgentState" not in agent_source
-    assert "UnifiedAgentState" not in tools_source
+    assert "UnifiedAgentState" not in tools_containers_source
+    assert "UnifiedAgentState" not in tools_factories_source
 
 
 def test_festival_node_keeps_external_io_in_tools_layer() -> None:

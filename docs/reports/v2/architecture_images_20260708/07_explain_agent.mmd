@@ -1,0 +1,16 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "lineColor": "#475569"}}}%%
+flowchart TD
+  PlannerOutput["planner_output"] --> Explain["Explain Itinerary Agent"]
+  Explain --> Runtime["ItineraryExplanationRuntime"]
+  Runtime --> DomainDDB["DynamoLookupTool<br/>record hydration"]
+  Runtime --> Bedrock["Bedrock Converse<br/>Explanation LLM"]
+  DomainDDB --> Copy["item explanation<br/>route copy"]
+  Bedrock --> Copy
+  Copy --> Output["planner_output enriched<br/>explanation audit"]
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
+  classDef tool fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px;
+  class Explain agent;
+  class Runtime,DomainDDB,Bedrock,Copy tool;
+  class Output output;

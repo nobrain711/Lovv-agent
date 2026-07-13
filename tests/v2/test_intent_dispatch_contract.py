@@ -56,6 +56,13 @@ def test_intent_node_resolves_button_clarification_from_pending_memory() -> None
         "thread_id": "thread-001",
         "selected_option_id": "continue_without_festival",
         "resume": {"option_id": "continue_without_festival"},
+        "clarification_resume": {
+            "option_id": "continue_without_festival",
+            "label": "축제 없이 계속",
+            "reason_code": "festival_none",
+            "apply": {"include_festivals": False},
+            "then": "rerun_discovery",
+        },
         "audit": {"matched_label": "축제 없이 계속"},
     }
 
@@ -122,6 +129,51 @@ def test_intent_node_returns_clarify_unresolved_for_unknown_option() -> None:
     assert intent["status"] == "needs_clarification"
     assert intent["reason_code"] == "clarify_option_unresolved"
     assert intent["selected_option_id"] is None
+
+
+def test_intent_node_treats_clarify_with_create_fields_as_corrected_create() -> None:
+    output = intent_node(
+        {
+            "request": {
+                "entryType": "clarify",
+                "threadId": "thread-001",
+                "country": "KR",
+                "travelMonth": 8,
+                "travelYear": 2026,
+                "tripType": "daytrip",
+                "themes": ["바다·해안"],
+                "includeFestivals": False,
+                "naturalLanguageQuery": "강릉 바다 당일 여행지를 추천해줘.",
+            },
+            "intent": {
+                "clarification": {
+                    "reason_code": "contradiction",
+                    "prompt": "old prompt",
+                    "options": [],
+                },
+                "city_select_input": {
+                    "country": "KR",
+                    "travel_month": 8,
+                    "travel_year": 2026,
+                    "trip_type": "daytrip",
+                    "active_required_themes": ["바다·해안"],
+                    "include_festivals": False,
+                    "cleaned_raw_query": "속초는 싫은데 속초 바다 여행지를 추천해줘",
+                    "soft_preference_query": "",
+                    "unsupported_conditions": [],
+                },
+            },
+            "response": {"response_payload": {"clarification": {"reasonCode": "contradiction"}}},
+        },
+    )
+
+    intent = output["intent"]
+    assert intent["intent_type"] == "create"
+    assert intent["city_select_input"]["cleaned_raw_query"] == "강릉 바다 당일 여행지를 추천해줘"
+    assert intent["city_select_input"]["preferred_region_ids"] == ("KR-51-150",)
+    assert "clarification" not in intent
+    assert output["response"] == {}
+    assert output["planner"] == {}
 
 
 def test_intent_node_builds_slot_replace_modify_intent() -> None:
@@ -218,7 +270,7 @@ def test_intent_node_builds_city_change_modify_intent() -> None:
     assert modify_intent["edit_ops"] == []
     assert modify_intent["city_change"]["target_city_id"] == "KR-47-130"
     assert modify_intent["city_change"]["target_city_name"] == "경주시"
-    assert modify_intent["city_change"]["avoid_city_ids"] == ["KR-51-150"]
+    assert modify_intent["city_change"]["avoid_city_ids"] == ("KR-51-150",)
     assert modify_intent["routing_hint"] == "planner_direct_anchor"
 
 

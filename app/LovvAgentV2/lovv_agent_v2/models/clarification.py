@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from lovv_agent_v2.models.clarification_apply import ClarificationApply
 from lovv_agent_v2.models.schemas import SchemaValidationError
 
 REASON_CODES: tuple[str, ...] = (
@@ -13,90 +14,24 @@ REASON_CODES: tuple[str, ...] = (
     "no_candidate_city",
     "contradiction",
     "thin_city",
+    "weather_alternative_available",
+    "modify_target_unresolved",
+    "modify_target_ambiguous",
+    "modify_ops_conflict",
+    "modify_seed_theme_conflict",
+    "modify_multi_edit_deferred",
+    "slot_replace_no_candidate",
+    "slot_replace_route_infeasible",
+    "generation_insufficient_candidates",
 )
 
-NEXT_ACTIONS: tuple[str, ...] = ("anchor", "rerun_discovery", "abort")
-
-
-@dataclass(frozen=True, slots=True)
-class ClarificationApply:
-    include_festivals: bool | None = None
-    destination_id: str | None = None
-    destination_label: str | None = None
-    festival_id: str | None = None
-    festival_label: str | None = None
-    allow_tentative_festivals: bool | None = None
-    accepted_festival_risk: bool | None = None
-    travel_month: int | None = None
-
-    @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "ClarificationApply":
-        return cls(
-            include_festivals=_optional_bool(
-                _first_optional(payload, "include_festivals", "includeFestivals"),
-                "include_festivals",
-            ),
-            destination_id=_optional_text(
-                _first_optional(payload, "destination_id", "destinationId"),
-                "destination_id",
-            ),
-            destination_label=_optional_text(
-                _first_optional(payload, "destination_label", "destinationLabel"),
-                "destination_label",
-            ),
-            festival_id=_optional_text(
-                _first_optional(payload, "festival_id", "festivalId"),
-                "festival_id",
-            ),
-            festival_label=_optional_text(
-                _first_optional(payload, "festival_label", "festivalLabel"),
-                "festival_label",
-            ),
-            allow_tentative_festivals=_optional_bool(
-                _first_optional(
-                    payload,
-                    "allow_tentative_festivals",
-                    "allowTentativeFestivals",
-                ),
-                "allow_tentative_festivals",
-            ),
-            accepted_festival_risk=_optional_bool(
-                _first_optional(
-                    payload,
-                    "accepted_festival_risk",
-                    "acceptedFestivalRisk",
-                ),
-                "accepted_festival_risk",
-            ),
-            travel_month=_optional_int(
-                _first_optional(payload, "travel_month", "travelMonth"),
-                "travel_month",
-            ),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "include_festivals": self.include_festivals,
-            "destination_id": self.destination_id,
-            "destination_label": self.destination_label,
-            "festival_id": self.festival_id,
-            "festival_label": self.festival_label,
-            "allow_tentative_festivals": self.allow_tentative_festivals,
-            "accepted_festival_risk": self.accepted_festival_risk,
-            "travel_month": self.travel_month,
-        }
-
-    def to_public_dict(self) -> dict[str, Any]:
-        return {
-            "includeFestivals": self.include_festivals,
-            "destinationId": self.destination_id,
-            "destinationLabel": self.destination_label,
-            "festivalId": self.festival_id,
-            "festivalLabel": self.festival_label,
-            "allowTentativeFestivals": self.allow_tentative_festivals,
-            "acceptedFestivalRisk": self.accepted_festival_risk,
-            "travelMonth": self.travel_month,
-        }
+NEXT_ACTIONS: tuple[str, ...] = (
+    "anchor",
+    "rerun_discovery",
+    "abort",
+    "weather_alternative",
+    "retry_slot_replace",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +40,7 @@ class ClarificationOption:
     label: str
     apply: ClarificationApply
     then: str
+    helper_text: str | None = None
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "ClarificationOption":
@@ -119,6 +55,7 @@ class ClarificationOption:
             label=_required_text(_first_present(payload, "label"), "label"),
             apply=ClarificationApply.from_mapping(apply_payload),
             then=_required_text(_first_present(payload, "then"), "then"),
+            helper_text=_optional_text(_first_optional(payload, "helper_text", "helperText"), "helper_text"),
         )
 
     def __post_init__(self) -> None:
@@ -129,18 +66,16 @@ class ClarificationOption:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "option_id": self.option_id,
-            "label": self.label,
-            "apply": self.apply.to_dict(),
-            "then": self.then,
+            "option_id": self.option_id, "label": self.label,
+            "helper_text": self.helper_text,
+            "apply": self.apply.to_dict(), "then": self.then,
         }
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
-            "optionId": self.option_id,
-            "label": self.label,
-            "apply": self.apply.to_public_dict(),
-            "then": self.then,
+            "optionId": self.option_id, "label": self.label,
+            "helperText": self.helper_text,
+            "apply": self.apply.to_public_dict(), "then": self.then,
         }
 
 
@@ -251,22 +186,6 @@ def _optional_text(value: Any, field_name: str) -> str | None:
     if value is None:
         return None
     return _required_text(value, field_name)
-
-
-def _optional_bool(value: Any, field_name: str) -> bool | None:
-    if value is None:
-        return None
-    if not isinstance(value, bool):
-        raise SchemaValidationError(f"{field_name} must be a boolean")
-    return value
-
-
-def _optional_int(value: Any, field_name: str) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise SchemaValidationError(f"{field_name} must be an integer")
-    return value
 
 
 def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:

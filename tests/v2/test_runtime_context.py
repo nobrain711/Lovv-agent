@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import lovv_agent_v2.agents.city_select.nodes as city_select_nodes
-from lovv_agent_v2.agents.planner.external.travel_time import HaversineTravelTimeProvider
+from lovv_agent_v2.tools.travel_time_provider import HaversineTravelTimeProvider
 from lovv_agent_v2.agents.planner.state.context import runtime_tools, travel_time_provider
-from lovv_agent_v2.agents.planner.tools import PlannerRuntimeTools
+from lovv_agent_v2.tools.runtime_containers import PlannerRuntimeTools
 from lovv_agent_v2.agents.response_packager.explain_itinerary import (
     ItineraryExplanationRuntime,
     explain_itinerary_node,

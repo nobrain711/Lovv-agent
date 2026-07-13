@@ -184,12 +184,12 @@ Resolve 실패 시:
 
 ## 4. Modify 처리 방안
 
-`modify`는 checkpoint의 기존 itinerary/context를 읽어 수정 intent를 만든다. 프론트가 `editOps`를 보내지 않는다는 점이 중요하다.
+`modify`는 request `currentOrder`를 현재 화면 순서의 정본으로 읽어 수정 intent를 만든다. `currentOrder`가 없거나 비어 있을 때만 checkpoint의 기존 itinerary/context를 fallback으로 사용한다. 프론트가 `editOps`를 보내지 않는다는 점이 중요하다.
 
 처리 순서:
 
 1. `threadId`, `itineraryRevision`, `rawModifyQuery`를 읽는다.
-2. checkpoint에서 current itinerary와 `currentOrder`를 복원한다.
+2. request `currentOrder`를 읽는다. 없거나 비어 있으면 checkpoint itinerary를 fallback으로 복원한다.
 3. target phrase를 `item_id`로 resolve한다.
 4. 요청이 slot replacement인지 city change인지 분류한다.
 5. `V2_34_MODIFY_INTENT_SCHEMA.md`의 `modify_intent`를 출력한다.

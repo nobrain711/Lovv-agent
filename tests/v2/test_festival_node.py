@@ -7,7 +7,7 @@ from langgraph.types import Command
 
 from lovv_agent_v2.agents.festival_verifier import node as festival_node_module
 from lovv_agent_v2.agents.festival_verifier.node import festival_verifier_node
-from lovv_agent_v2.agents.festival_verifier.tools import FestivalVerifierTools
+from lovv_agent_v2.tools.runtime_containers import FestivalVerifierTools
 from lovv_agent_v2.core.graph import compile_v2_graph_with_nodes
 from lovv_agent_v2.infra.dynamo_lookup import FestivalSeedResult
 
@@ -159,14 +159,13 @@ def test_graph_stops_before_city_select_when_festival_needs_clarification() -> N
     assert interrupt_payload["clarification"]["reasonCode"] == "festival_tentative"
 
     resumed = graph.invoke(
-        Command(resume={"optionId": "continue_without_festival"}),
+        Command(resume={"optionId": "revise_conditions"}),
         config=config,
     )
 
     assert resumed["response"]["response_status"] == "END_WAIT_USER"
-    assert resumed["response"]["clarification_resume"] == {
-        "optionId": "continue_without_festival",
-    }
+    assert resumed["response"]["clarification_resume"]["option_id"] == "revise_conditions"
+    assert resumed["response"]["clarification_resume"]["then"] == "abort"
 
 
 class RecordingFestivalLookup:

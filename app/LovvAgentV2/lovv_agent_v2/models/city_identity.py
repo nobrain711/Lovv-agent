@@ -13,8 +13,8 @@ from lovv_agent_v2.models.schemas import SchemaValidationError
 DEFAULT_CITY_METADATA_PATH = Path(
     "metadata_audit/kr-tour-domain-v2-all-metadata-20260630T001340Z.json",
 )
-DEFAULT_CITY_IDENTITY_MAP_PATH = Path(
-    "src/lovv_agent_v2/resources/city_identity_map.json",
+DEFAULT_CITY_IDENTITY_MAP_PATH = (
+    Path(__file__).resolve().parents[1] / "resources" / "city_identity_map.json"
 )
 
 
@@ -55,6 +55,16 @@ class CityIdentityMap:
         if identity is None:
             raise SchemaValidationError("unknown city identity")
         return identity
+
+    def identities(self) -> tuple[CityIdentity, ...]:
+        seen: set[str] = set()
+        result: list[CityIdentity] = []
+        for identity in self._by_key.values():
+            if identity.city_id in seen:
+                continue
+            seen.add(identity.city_id)
+            result.append(identity)
+        return tuple(result)
 
     def _register(self, identity: CityIdentity) -> None:
         for value in (

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from lovv_agent_v2.agents.city_select.domain.contracts import (
+from lovv_agent_v2.tools.city_select_contracts import (
     AttractionCandidate,
     PrunedCityGroups,
     prepare_city_select_context,

@@ -99,8 +99,18 @@ def selected_generation_files(
         if not path.exists():
             raise FileNotFoundError(path)
         return (path,)
-    files = tuple(sorted(case_dir.glob("*.json")))
+    files = tuple(
+        path for path in sorted(case_dir.glob("*.json")) if is_generation_case_file(path)
+    )
     return files[:limit] if limit is not None else files
+
+
+def is_generation_case_file(path: Path) -> bool:
+    try:
+        payload = load_json(path)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, Mapping) and "id" in payload and "intent_output" in payload
 
 
 def generation_case_from_file(path: Path) -> dict[str, Any]:

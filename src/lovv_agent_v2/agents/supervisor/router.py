@@ -3,26 +3,20 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from lovv_agent_v2.agents.supervisor.confirmation_routing import (
+    is_itinerary_confirmation_state,
+)
+from lovv_agent_v2.agents.supervisor.modify_routing import (
+    has_current_modify_response_payload,
+    modify_intent_from_state,
+    modify_intent_needs_response,
+    modify_intent_routes_slot_replace_planner,
+    slot_replace_applied,
+    slot_replace_failed,
+)
 from lovv_agent_v2.core.state import UnifiedAgentState
 
 END_ROUTE = "end"
-CONFIRMATION_INTENT_VALUES = frozenset(
-    {
-        "itinerary_confirmed",
-        "itinerary_confirmation",
-        "confirm_itinerary",
-        "confirm",
-        "confirmed",
-        "일정_확정",
-    },
-)
-CONFIRMATION_FIELD_NAMES = (
-    "intent_type",
-    "intentType",
-    "action",
-    "entry_type",
-    "entryType",
-)
 
 
 def supervisor_node(state: UnifiedAgentState) -> dict[str, dict[str, Any]]:
@@ -46,16 +40,25 @@ def route_next_action(state: UnifiedAgentState) -> str:
 
 
 def _next_node(state: Mapping[str, Any], *, reason_code: str | None) -> str:
-    if _is_itinerary_confirmation_state(state):
+    modify_intent = modify_intent_from_state(state)
+    if is_itinerary_confirmation_state(state):
         return END_ROUTE if _has_profile_update(state) else "profile"
-    if _modify_intent_routes_direct_anchor_planner(state):
-        return "planner"
-    if _modify_intent_needs_response(state):
+    if _has_current_modify_response_payload(state, modify_intent):
+        return END_ROUTE
+    if slot_replace_failed(state):
         return "response_packager"
-    if _modify_intent_has_planner_output(state):
-        if _has_current_modify_response_payload(state):
+    if modify_intent_routes_slot_replace_planner(state, modify_intent):
+        return "planner"
+    if _modify_intent_routes_direct_anchor_planner(state, modify_intent):
+        return "planner"
+    if modify_intent_needs_response(modify_intent):
+        return "response_packager"
+    if _modify_intent_has_planner_output(state, modify_intent):
+        if _has_current_modify_response_payload(state, modify_intent):
             return END_ROUTE
-        return "explain_itinerary" if not _has_itinerary_explanation(state) else "response_packager"
+        if not _has_itinerary_explanation(state):
+            return "explain_itinerary"
+        return "response_packager" if _has_post_explain_weather(state) else "weather_alternative"
     if _has_response_payload(state):
         return END_ROUTE
     if reason_code is not None:
@@ -74,6 +77,8 @@ def _next_node(state: Mapping[str, Any], *, reason_code: str | None) -> str:
         return "planner"
     if not _has_itinerary_explanation(state):
         return "explain_itinerary"
+    if not _has_post_explain_weather(state):
+        return "weather_alternative"
     return "response_packager"
 
 
@@ -93,7 +98,12 @@ def _completed_groups(state: Mapping[str, Any]) -> list[str]:
 
 
 def _clarification_reason_code(state: Mapping[str, Any]) -> str | None:
-    modify_intent = _modify_intent(state)
+    intent = state.get("intent")
+    if isinstance(intent, Mapping):
+        value = _clarification_reason_from_group(intent)
+        if value is not None:
+            return value
+    modify_intent = modify_intent_from_state(state)
     if modify_intent is not None:
         value = _clarification_reason_from_group(modify_intent)
         if value is not None:
@@ -117,68 +127,35 @@ def _clarification_reason_from_group(group: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _modify_intent_needs_response(state: Mapping[str, Any]) -> bool:
-    modify_intent = _modify_intent(state)
+def _modify_intent_routes_direct_anchor_planner(
+    state: Mapping[str, Any],
+    modify_intent: Mapping[str, Any] | None,
+) -> bool:
     if modify_intent is None:
         return False
-    status = modify_intent.get("status")
-    if status in {"needs_clarification", "unsupported"}:
-        return True
-    routing_hint = modify_intent.get("routing_hint")
-    return routing_hint in {"planner_apply_edit", "response_packager_wait_user", "response_packager_notice"}
-
-
-def _modify_intent_routes_direct_anchor_planner(state: Mapping[str, Any]) -> bool:
-    modify_intent = _modify_intent(state)
-    if modify_intent is None:
-        return False
-    return not _has_planner_output(state) and not _has_city_select_result_or_terminal_status(state) and (
-        modify_intent.get("status") == "ok"
-        and modify_intent.get("routing_hint")
-        in {"planner_direct_anchor", "city_select_rediscovery"}
+    return (
+        not _has_planner_output(state)
+        and not _has_city_select_result_or_terminal_status(state)
+        and _can_skip_city_select_for_direct_anchor(state)
+        and modify_intent.get("status") == "ok"
+        and modify_intent.get("routing_hint") == "planner_direct_anchor"
     )
 
 
-def _modify_intent_has_planner_output(state: Mapping[str, Any]) -> bool:
-    modify_intent = _modify_intent(state)
+def _modify_intent_has_planner_output(
+    state: Mapping[str, Any],
+    modify_intent: Mapping[str, Any] | None,
+) -> bool:
     if modify_intent is None:
         return False
     return modify_intent.get("status") == "ok" and _has_planner_output(state)
 
 
-def _has_current_modify_response_payload(state: Mapping[str, Any]) -> bool:
-    modify_intent = _modify_intent(state)
-    if modify_intent is None:
-        return False
-    city_change = modify_intent.get("city_change")
-    if not isinstance(city_change, Mapping):
-        return False
-    response = state.get("response")
-    if not isinstance(response, Mapping):
-        return False
-    payload = response.get("response_payload")
-    if not isinstance(payload, Mapping):
-        return False
-    destination = payload.get("destination")
-    if not isinstance(destination, Mapping):
-        return False
-    target_id = city_change.get("target_city_id")
-    if isinstance(target_id, str) and destination.get("destinationId") == target_id:
-        return True
-    target_name = city_change.get("target_city_name")
-    return isinstance(target_name, str) and destination.get("name") == target_name
-
-
-def _modify_intent(state: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    intent = state.get("intent")
-    if not isinstance(intent, Mapping):
-        return None
-    modify_intent = intent.get("modify_intent")
-    if isinstance(modify_intent, Mapping):
-        return modify_intent
-    if intent.get("intent_type") == "modification":
-        return intent
-    return None
+def _has_current_modify_response_payload(
+    state: Mapping[str, Any],
+    modify_intent: Mapping[str, Any] | None,
+) -> bool:
+    return modify_intent is not None and has_current_modify_response_payload(state, modify_intent)
 
 
 def _has_profile_result(state: Mapping[str, Any]) -> bool:
@@ -189,27 +166,6 @@ def _has_profile_result(state: Mapping[str, Any]) -> bool:
 def _has_profile_update(state: Mapping[str, Any]) -> bool:
     profile = state.get("profile")
     return isinstance(profile, Mapping) and isinstance(profile.get("profile_update"), Mapping)
-
-
-def _is_itinerary_confirmation_state(state: Mapping[str, Any]) -> bool:
-    for group_name in ("intent", "request"):
-        group = state.get(group_name)
-        if isinstance(group, Mapping) and _is_itinerary_confirmation(group):
-            return True
-    return False
-
-
-def _is_itinerary_confirmation(payload: Mapping[str, Any]) -> bool:
-    return any(
-        _normalized_intent_value(payload.get(field_name)) in CONFIRMATION_INTENT_VALUES
-        for field_name in CONFIRMATION_FIELD_NAMES
-    )
-
-
-def _normalized_intent_value(value: Any) -> str:
-    if not isinstance(value, str):
-        return ""
-    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def _has_festival_gate_result(state: Mapping[str, Any]) -> bool:
@@ -313,6 +269,27 @@ def _has_itinerary_explanation(state: Mapping[str, Any]) -> bool:
         or "detail_enrichment_warning_count" in validation
         or "itinerary_explanation_item_count" in validation
     )
+
+
+def _has_post_explain_weather(state: Mapping[str, Any]) -> bool:
+    validation = _planner_validation(state)
+    weather_audit = validation.get("weather_audit")
+    return isinstance(weather_audit, Mapping) and weather_audit.get("evaluation_stage") == "post_explain"
+
+
+def _planner_validation(state: Mapping[str, Any]) -> Mapping[str, Any]:
+    planner = state.get("planner")
+    if not isinstance(planner, Mapping):
+        return {}
+    validation = planner.get("validation_result")
+    if isinstance(validation, Mapping):
+        return validation
+    planner_output = planner.get("planner_output")
+    if isinstance(planner_output, Mapping):
+        output_validation = planner_output.get("validation_result")
+        if isinstance(output_validation, Mapping):
+            return output_validation
+    return {}
 
 
 def _has_response_payload(state: Mapping[str, Any]) -> bool:

@@ -6,8 +6,10 @@ from typing import Any
 
 from langgraph.graph import StateGraph
 from lovv_agent_v2.core.state import UnifiedAgentState
-from lovv_agent_v2.agents.city_select.retrieval_node import retrieval_node
-from lovv_agent_v2.agents.city_select.scoring_and_selection_node import scoring_and_selection_node
+from lovv_agent_v2.agents.city_select.nodes import (
+    retrieval_node,
+    scoring_and_selection_node,
+)
 
 
 def compile_city_select_subgraph(checkpointer: Any | None = None) -> Any:

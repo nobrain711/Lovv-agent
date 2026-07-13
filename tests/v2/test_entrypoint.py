@@ -186,6 +186,35 @@ def test_handle_v2_invocation_resumes_existing_thread(
 
 
 @patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
+def test_handle_v2_invocation_sends_clarify_request_as_resume(
+    mock_cached_harness: MagicMock,
+) -> None:
+    mock_harness_instance = MagicMock()
+    mock_harness_instance.invoke.return_value = {
+        "response": {"response_payload": {"recommendationId": "REC-CORRECTED"}},
+    }
+    mock_cached_harness.return_value = mock_harness_instance
+
+    result = handle_v2_invocation(
+        {
+            "entryType": "clarify",
+            "country": "KR",
+            "travelMonth": 8,
+            "tripType": "daytrip",
+            "themes": ["바다·해안"],
+            "includeFestivals": False,
+            "sessionId": "session-xyz",
+            "naturalLanguageQuery": "강릉 바다 당일 여행지를 추천해줘.",
+        },
+    )
+
+    payload = mock_harness_instance.invoke.call_args.args[0]
+    assert payload.resume["entryType"] == "clarify"
+    assert payload.resume["naturalLanguageQuery"] == "강릉 바다 당일 여행지를 추천해줘."
+    assert result == {"recommendationId": "REC-CORRECTED"}
+
+
+@patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
 @patch("lovv_agent_v2.agentcore_entrypoint._cached_profile_evidence_resolver")
 def test_handle_v2_invocation_continues_when_profile_evidence_lookup_fails(
     mock_profile_resolver: MagicMock,
@@ -229,7 +258,7 @@ def test_handle_v2_invocation_continues_when_profile_evidence_lookup_fails(
     assert result == {"recommendationId": "REC-fallback"}
 
 
-def test_extract_graph_payload_wraps_generation_intent_mock() -> None:
+def test_extract_graph_payload_rejects_generation_intent_mock() -> None:
     event = {
         "id": "v2_gen_10_history_festival_2d1n",
         "intent_output": {
@@ -249,12 +278,12 @@ def test_extract_graph_payload_wraps_generation_intent_mock() -> None:
         },
     }
 
-    payload = extract_graph_payload(event, request_id="agentcore-session")
-
-    assert payload["request"]["request_id"] == "agentcore-session"
-    assert payload["request"]["themes"] == ("역사·전통",)
-    assert payload["intent"]["intent_output"]["include_festivals"] is True
-    assert payload["profile"] == {}
+    try:
+        extract_graph_payload(event, request_id="agentcore-session")
+    except ValueError as exc:
+        assert "recommendations request payload" in str(exc)
+    else:
+        raise AssertionError("intent_output mock payload must be rejected")
 
 
 def test_extract_graph_payload_wraps_public_recommendation_request() -> None:
@@ -276,6 +305,8 @@ def test_extract_graph_payload_wraps_public_recommendation_request() -> None:
     assert payload["request"]["request_id"] == "REQ-PUBLIC"
     assert payload["request"]["themes"] == ("바다·해안",)
     assert payload["request"]["raw_query"] == "조용한 바다 당일치기"
+    assert "congestion_pref" not in payload["request"]
+    assert "transport_pref" not in payload["request"]
     assert "intent" not in payload
 
 
@@ -295,7 +326,7 @@ def test_extract_graph_payload_uses_natural_language_query_textfield() -> None:
     payload = extract_graph_payload(event, request_id="REQ-TEXTFIELD")
 
     assert payload["request"]["raw_query"] == event["naturalLanguageQuery"]
-    assert payload["request"]["soft_preference_query"] == event["softPreferenceQuery"]
+    assert "soft_preference_query" not in payload["request"]
     assert "intent" not in payload
 
 

@@ -51,12 +51,13 @@ def handle_v2_invocation(event: Any, context: Any | None = None) -> dict[str, An
     thread_id = extract_thread_id(event, fallback=request_id)
     actor_id = extract_actor_id(event) or thread_id
     resume_value = extract_resume_value(event)
+    clarify_resume = _clarify_resume_value(event) if resume_value is None else None
     payload = (
-        Command(resume=resume_value)
-        if resume_value is not None
+        Command(resume=resume_value if resume_value is not None else clarify_resume)
+        if resume_value is not None or clarify_resume is not None
         else extract_graph_payload(event, request_id=request_id)
     )
-    if resume_value is None:
+    if resume_value is None and clarify_resume is None:
         payload = _payload_with_profile_evidence(
             payload,
             actor_id=actor_id,
@@ -79,7 +80,10 @@ def handle_v2_invocation(event: Any, context: Any | None = None) -> dict[str, An
     if interrupted is not None:
         return interrupted
     response = result.get("response") if isinstance(result, Mapping) else None
-    if not isinstance(response, Mapping) or not isinstance(response.get("response_payload"), Mapping):
+    if not isinstance(response, Mapping) or not isinstance(
+        response.get("response_payload"),
+        Mapping,
+    ):
         raise ValueError("V2 graph did not produce response payload")
     return dict(response["response_payload"])
 
@@ -108,6 +112,13 @@ def _payload_with_profile_evidence(
         return enriched
 
 
+def _clarify_resume_value(event: Any) -> dict[str, Any] | None:
+    decoded = _decode_json_if_needed(event)
+    if not isinstance(decoded, Mapping) or _entry_type(decoded) != "clarify":
+        return None
+    return extract_recommendation_payload(decoded)
+
+
 def extract_graph_payload(event: Any, *, request_id: str | None = None) -> dict[str, Any]:
     decoded = _decode_json_if_needed(event)
     if not isinstance(decoded, Mapping):
@@ -127,7 +138,7 @@ def extract_graph_payload(event: Any, *, request_id: str | None = None) -> dict[
             return payload
 
     raise ValueError(
-        "AgentCore invocation must contain a /recommendations request or V2 intent mock",
+        "AgentCore invocation must contain a /recommendations request payload",
     )
 
 
@@ -188,7 +199,14 @@ def extract_actor_id(event: Any) -> str | None:
 def _looks_like_recommendation_request(payload: Mapping[str, Any]) -> bool:
     """Return whether a mapping has the public recommendation request fields."""
 
-    return _REQUEST_FIELD_MARKERS.issubset(payload.keys())
+    entry_type = _entry_type(payload)
+    match entry_type:
+        case "modify" | "clarify" | "confirm":
+            return True
+        case "create":
+            return _has_create_request_fields(payload)
+        case _:
+            return _has_create_request_fields(payload)
 
 
 def _graph_payload_from_mapping(
@@ -196,32 +214,9 @@ def _graph_payload_from_mapping(
     *,
     request_id: str | None,
 ) -> dict[str, Any] | None:
-    intent_output = payload.get("intent_output")
-    if isinstance(intent_output, Mapping):
-        case_id = _text_or_none(payload.get("id"))
-        return _state_from_intent_output(
-            intent_output,
-            request_id=request_id or case_id,
-        )
     if _looks_like_recommendation_request(payload):
         return _state_from_recommendation_request(payload, request_id=request_id)
     return None
-
-
-def _state_from_intent_output(
-    intent_output: Mapping[str, Any],
-    *,
-    request_id: str | None,
-) -> dict[str, Any]:
-    resolved_request_id = request_id or "agentcore-v2-mock"
-    return {
-        "request": _request_from_intent_output(
-            intent_output,
-            request_id=resolved_request_id,
-        ),
-        "intent": {"intent_output": dict(intent_output)},
-        "profile": {},
-    }
 
 
 def _state_from_recommendation_request(
@@ -230,37 +225,18 @@ def _state_from_recommendation_request(
     request_id: str | None,
 ) -> dict[str, Any]:
     resolved_request_id = request_id or _text_or_none(request.get("requestId")) or "agentcore-v2"
+    if _entry_type(request) in {"modify", "clarify", "confirm"}:
+        return {
+            "request": _followup_request(request, request_id=resolved_request_id),
+            "profile": {},
+        }
     normalized_request = _request_from_recommendation_request(
         request,
         request_id=resolved_request_id,
     )
     return {
         "request": normalized_request,
-        "intent": {
-            "city_select_input": _city_select_input_from_request(normalized_request),
-        },
         "profile": {},
-    }
-
-
-def _request_from_intent_output(
-    intent_output: Mapping[str, Any],
-    *,
-    request_id: str,
-) -> dict[str, Any]:
-    return {
-        "request_id": request_id,
-        "country": intent_output["country"],
-        "travel_month": intent_output["travel_month"],
-        "travel_year": intent_output.get("travel_year"),
-        "trip_type": intent_output["trip_type"],
-        "destination_id": intent_output.get("destination_id"),
-        "include_festivals": intent_output["include_festivals"],
-        "themes": tuple(intent_output["active_required_themes"]),
-        "raw_query": intent_output["cleaned_raw_query"],
-        "congestion_pref": intent_output.get("congestion_pref", "neutral"),
-        "transport_pref": intent_output.get("transport_pref", "unknown"),
-        "user_location": intent_output.get("user_location"),
     }
 
 
@@ -277,46 +253,44 @@ def _request_from_recommendation_request(
         "trip_type": request["tripType"],
         "destination_id": request.get("destinationId"),
         "include_festivals": request["includeFestivals"],
-        "themes": tuple(request["themes"]),
+        "themes": tuple(request.get("activeRequiredThemes", request.get("themes", ()))),
         "raw_query": request.get("rawQuery", request.get("naturalLanguageQuery", "")),
-        "soft_preference_query": request.get("softPreferenceQuery", ""),
-        "congestion_pref": request.get("congestionPref", "neutral"),
-        "transport_pref": request.get("transportPref", "unknown"),
         "user_location": request.get("userLocation"),
     }
 
 
-def _city_select_input_from_request(request: Mapping[str, Any]) -> dict[str, Any]:
-    destination_id = request.get("destination_id")
-    include_festivals = bool(request["include_festivals"])
-    execution_mode = _execution_mode(
-        destination_id=destination_id,
-        include_festivals=include_festivals,
+def _followup_request(
+    request: Mapping[str, Any],
+    *,
+    request_id: str,
+) -> dict[str, Any]:
+    normalized = dict(request)
+    normalized["request_id"] = request_id
+    return normalized
+
+
+def _has_create_request_fields(payload: Mapping[str, Any]) -> bool:
+    has_required_fields = all(
+        key in payload
+        for key in ("entryType", "country", "travelMonth", "tripType", "includeFestivals")
     )
-    return {
-        "country": request["country"],
-        "travel_month": request["travel_month"],
-        "travel_year": request.get("travel_year"),
-        "trip_type": request["trip_type"],
-        "active_required_themes": tuple(request["themes"]),
-        "include_festivals": include_festivals,
-        "cleaned_raw_query": request["raw_query"],
-        "soft_preference_query": request.get("soft_preference_query", ""),
-        "unsupported_conditions": (),
-        "destination_id": destination_id,
-        "user_location": request.get("user_location"),
-        "execution_mode": execution_mode,
-        "congestion_pref": request.get("congestion_pref", "neutral"),
-        "transport_pref": request.get("transport_pref", "unknown"),
-    }
+    return has_required_fields and _has_theme_selection(payload)
 
 
-def _execution_mode(*, destination_id: Any, include_festivals: bool) -> str:
-    if isinstance(destination_id, str) and destination_id.strip():
-        return "anchored_place_search"
-    if include_festivals:
-        return "festival_seeded_city_discovery"
-    return "city_discovery"
+def _has_theme_selection(payload: Mapping[str, Any]) -> bool:
+    value = payload.get("activeRequiredThemes", payload.get("themes"))
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, (list, tuple)):
+        return False
+    return any(isinstance(item, str) and item.strip() for item in value)
+
+
+def _entry_type(payload: Mapping[str, Any]) -> str:
+    value = payload.get("entryType", payload.get("entry_type", "create"))
+    if not isinstance(value, str):
+        return "create"
+    return value.strip().lower().replace("-", "_")
 
 
 def _text_or_none(value: Any) -> str | None:

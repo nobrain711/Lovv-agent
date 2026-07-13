@@ -23,16 +23,9 @@ def build_checkpointer(memory: MemorySettings) -> Any | None:
         aws_checkpoint_module = import_module("langgraph_checkpoint_aws")
         AgentCoreMemorySaver = getattr(aws_checkpoint_module, "AgentCoreMemorySaver")
 
-        kwargs: dict[str, Any] = {}
-        if memory.memory_id:
-            kwargs["memory_id"] = memory.memory_id
-        if memory.kms_key_arn:
-            kwargs["kms_key_arn"] = memory.kms_key_arn
-        
-        # Mapping event_expiry_days to checkpointer lifespan configurations
-        kwargs["event_expiry_days"] = memory.event_expiry_days
-
-        return AgentCoreMemorySaver(**kwargs)
+        if not memory.memory_id:
+            raise RuntimeError("LOVV_MEMORY_ID is required when LOVV_MEMORY_ENABLED=True")
+        return AgentCoreMemorySaver(memory.memory_id)
     except (ModuleNotFoundError, AttributeError) as exc:
         raise RuntimeError(
             "langgraph-checkpoint-aws package is required when LOVV_MEMORY_ENABLED=True. "

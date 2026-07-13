@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from lovv_agent_v2.agents.city_select.retrieval_node import AttractionCandidate
+from lovv_agent_v2.tools.city_select_contracts import AttractionCandidate
 from lovv_agent_v2.models.schemas import PlannerExplanationAudit
 
 INTERNAL_CLAIM_TERMS = (
@@ -15,6 +15,11 @@ INTERNAL_CLAIM_TERMS = (
     "스코어",
     "ranking formula",
     "raw retrieval",
+    "seed",
+    "cluster",
+    "relevance",
+    "클러스터",
+    "관련도",
     "score audit",
     "dynamodb",
     "s3 vector",

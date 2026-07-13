@@ -1,0 +1,27 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "lineColor": "#475569"}}}%%
+flowchart LR
+  Input["selected_city<br/>planner hints<br/>modify_intent"] --> Planner["Planner Agent"]
+  Planner --> Entry{"entry route"}
+  Entry -->|"normal"| Retrieve["retrieve_places"]
+  Entry -->|"slot_replace / day_regenerate"| Edit["apply_edit"]
+
+  subgraph Build["Normal itinerary build"]
+    Retrieve --> Search["DestinationSearch + Embedding"]
+    Search --> Route["route_days<br/>anchor / assign / trim / repair"]
+    Route --> Travel["TravelTimeProvider<br/>ORS fallback Haversine"]
+    Travel --> Assemble["assemble_itinerary"]
+  end
+
+  Assemble --> Retry{"retry alternative city?"}
+  Retry -->|"yes"| RetryCity["retry_alternative_city"]
+  RetryCity -.-> Retrieve
+  Retry -->|"no"| Weather["weather_alternative handoff"]
+  Edit --> Weather
+  Weather --> Output["planner_output<br/>validation_result"]
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
+  classDef tool fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px;
+  class Planner agent;
+  class Retrieve,Edit,Search,Route,Travel,Assemble,RetryCity,Weather tool;
+  class Output output;

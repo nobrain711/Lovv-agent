@@ -4,13 +4,17 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from lovv_agent_v2.agents.intent.parser import IntentPreferenceResult, parse_initial_query
+from lovv_agent_v2.agents.intent.modify_day_regenerate import day_regenerate_request
 from lovv_agent_v2.agents.intent.modify_slots import (
     avoid_city_ids,
     current_order,
     public_operation,
     slot_replace_operations,
 )
-from lovv_agent_v2.models.city_identity import load_default_city_identity_map
+from lovv_agent_v2.models.city_identity import (
+    load_default_city_identity_map,
+)
+from lovv_agent_v2.models.city_identity_text import find_city_identity_in_text
 
 
 def parse_modify_query(raw_query: str) -> IntentPreferenceResult:
@@ -50,7 +54,21 @@ def build_modify_intent(
             "city_change": city_change,
             "clarification": None,
             "unsupported_reasons": [],
-            "routing_hint": "planner_direct_anchor",
+            "routing_hint": _city_change_routing_hint(city_change),
+            "audit": {"parser": "rule_v2"},
+        }
+    day_regenerate = day_regenerate_request(raw_query, current_order_items)
+    if day_regenerate is not None:
+        return {
+            **base,
+            "status": "ok",
+            "kind": "day_regenerate",
+            "edit_ops": [],
+            "day_regenerate": day_regenerate,
+            "city_change": None,
+            "clarification": None,
+            "unsupported_reasons": [],
+            "routing_hint": "planner_apply_edit",
             "audit": {"parser": "rule_v2"},
         }
     operations = slot_replace_operations(raw_query, current_order_items)
@@ -166,13 +184,18 @@ def _city_change(
         return None
     if not any(keyword in raw_query for keyword in ("바꿔", "변경", "교체")):
         return None
+    if "다른" in raw_query:
+        return {
+            "target_city_id": None,
+            "target_city_name": None,
+            "city_preference_query": raw_query,
+            "carry_over_themes": True,
+            "carry_over_festivals": True,
+            "avoid_city_ids": avoid_city_ids(current_order),
+        }
     city_map = load_default_city_identity_map()
-    for city_name in ("경주", "안동", "속초", "강릉", "삼척", "영주", "울진"):
-        if city_name not in raw_query:
-            continue
-        identity = city_map.get(city_name) or city_map.get(f"{city_name}시")
-        if identity is None:
-            continue
+    identity = find_city_identity_in_text(city_map, raw_query)
+    if identity is not None:
         return {
             "target_city_id": identity.city_id,
             "target_city_name": identity.city_name_ko,
@@ -182,6 +205,14 @@ def _city_change(
             "avoid_city_ids": avoid_city_ids(current_order),
         }
     return None
+
+
+def _city_change_routing_hint(city_change: Mapping[str, Any]) -> str:
+    return (
+        "planner_direct_anchor"
+        if _optional_text(city_change.get("target_city_id")) is not None
+        else "city_select_rediscovery"
+    )
 
 
 def _clarification_result(

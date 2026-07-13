@@ -17,10 +17,6 @@ def test_intent_node_reanchors_city_change_and_clears_stale_outputs() -> None:
                     "destination_id": None,
                     "raw_query": "이전 생성 입력",
                 },
-                "intent_output": {
-                    "destination_id": None,
-                    "cleaned_raw_query": "이전 생성 입력",
-                },
                 "city_select_input": {
                     "country": "KR",
                     "travel_month": 10,
@@ -49,6 +45,46 @@ def test_intent_node_reanchors_city_change_and_clears_stale_outputs() -> None:
     assert intent["trip_intent"]["raw_query"] == "역사 여행"
     assert intent["trip_intent"]["soft_preference_query"] == "조용한 고도 산책"
     assert "intent_output" not in intent
+    assert output["city_select"] == {}
+    assert output["planner"] == {}
+    assert output["response"] == {}
+
+
+def test_city_change_with_festivals_clears_stale_festival_gate() -> None:
+    output = intent_node(
+        {
+            "request": {
+                "entryType": "modify",
+                "threadId": "thread-001",
+                "itineraryRevision": "rev-001",
+                "rawModifyQuery": "도시는 경주로 바꿔줘.",
+            },
+            "intent": {
+                "city_select_input": {
+                    "country": "KR",
+                    "travel_month": 10,
+                    "travel_year": 2026,
+                    "trip_type": "2d1n",
+                    "active_required_themes": ("역사·전통",),
+                    "include_festivals": True,
+                    "cleaned_raw_query": "축제 포함 역사 여행",
+                    "destination_id": "KR-OLD",
+                    "execution_mode": "anchored_place_search",
+                },
+            },
+            "festival_gate": {
+                "allowed_city_ids": ["KR-OLD"],
+                "result": {"status": "ok", "allowed_city_ids": ["KR-OLD"]},
+            },
+            "city_select": {"city_selection_result": {"selected_city": {"city_id": "KR-OLD"}}},
+            "planner": {"planner_output": {"itinerary": []}},
+            "response": {"response_payload": {"recommendationId": "REQ-OLD"}},
+        },
+    )
+
+    assert output["intent"]["city_select_input"]["include_festivals"] is True
+    assert output["intent"]["city_select_input"]["destination_id"] == "KR-47-130"
+    assert output["festival_gate"] == {}
     assert output["city_select"] == {}
     assert output["planner"] == {}
     assert output["response"] == {}

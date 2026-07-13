@@ -10,6 +10,8 @@ from lovv_agent_v2.models.clarification import (
     ClarificationApply,
     ClarificationOption,
 )
+from lovv_agent_v2.models.clarification_texts import clarification_helper_text
+from lovv_agent_v2.models.clarification_texts import clarification_label_text
 
 
 def request_payload() -> dict[str, object]:
@@ -58,6 +60,7 @@ class ResponseClarificationPackagingTest(unittest.TestCase):
                 ClarificationOption(
                     option_id="continue_without_festival",
                     label="축제 없이 계속",
+                    helper_text="축제 조건을 제외하고 여행지를 다시 찾습니다.",
                     apply=ClarificationApply(
                         include_festivals=False,
                         destination_id=None,
@@ -96,6 +99,49 @@ class ResponseClarificationPackagingTest(unittest.TestCase):
         self.assertEqual(
             response["clarification"]["options"][0]["then"],
             "rerun_discovery",
+        )
+        self.assertEqual(
+            response["clarification"]["options"][0]["helperText"],
+            "축제 조건을 제외하고 여행지를 다시 찾습니다.",
+        )
+
+    def test_apply_exposes_theme_agnostic_festival_retry(self) -> None:
+        # Given: a festival retry option that clears theme narrowing.
+        option = ClarificationOption(
+            option_id="search_any_festival_theme",
+            label="테마 무관 축제 찾기",
+            helper_text="선호 테마와 무관하게 확정 축제가 있는 도시를 찾습니다.",
+            apply=ClarificationApply(
+                include_festivals=True,
+                active_required_themes=(),
+                festival_theme_agnostic=True,
+            ),
+            then="rerun_discovery",
+        )
+
+        # Then: the public payload carries the explicit retry semantics.
+        payload = option.to_public_dict()
+        self.assertEqual(payload["apply"]["activeRequiredThemes"], [])
+        self.assertTrue(payload["apply"]["festivalThemeAgnostic"])
+
+    def test_helper_texts_are_loaded_from_editable_resource(self) -> None:
+        self.assertEqual(
+            clarification_helper_text(
+                "festival_tentative",
+                "accept_tentative_festival:FEST-1",
+                "fallback",
+            ),
+            "확정되지 않은 축제 일정일 수 있음을 감수하고 해당 도시로 진행합니다.",
+        )
+
+    def test_labels_are_loaded_from_editable_resource(self) -> None:
+        self.assertEqual(
+            clarification_label_text(
+                "festival_none",
+                "continue_without_festival",
+                "fallback",
+            ),
+            "축제 없이 계속",
         )
 
 

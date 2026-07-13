@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from lovv_agent_v2.agents.response_packager.explain_itinerary import (
     ItineraryExplanationRuntime,
@@ -19,11 +20,16 @@ from lovv_agent_v2.models.schemas import PlannerOutput
 class PlannerCopyRuntime:
     def __init__(self, response: dict[str, Any]) -> None:
         self.response = response
-        self.requests: list[dict[str, Any]] = []
+        self.requests: list[Mapping[str, Any]] = []
 
-    def __call__(self, request: dict[str, Any]) -> dict[str, Any]:
+    def __call__(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         self.requests.append(request)
         return self.response
+
+
+@runtime_checkable
+class InvokableGraph(Protocol):
+    def invoke(self, input: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
 
 class RecordingDynamoLookup:
@@ -87,7 +93,7 @@ def _state(
     *,
     runtime_bucket: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    state = {
+    state: dict[str, Any] = {
         "intent": {
             "city_select_input": {
                 "country": "KR",
@@ -150,7 +156,7 @@ def test_explain_itinerary_node_uses_v1_composer_with_enriched_v2_items() -> Non
         ),
     )
 
-    output = result["planner"]["planner_output"]
+    output = _planner_output_from_result(result)
     item = output["itinerary"][0]
     assert item["title"] == "잔잔한 속초 해변"
     assert item["copy_source"] == "llm_planner_copy"
@@ -181,6 +187,7 @@ def test_graph_preserves_itinerary_explanation_runtime_for_copy_generation() -> 
         },
     )
     graph = compile_v2_graph()
+    assert isinstance(graph, InvokableGraph)
     state = _state(
         ItineraryExplanationRuntime(
             explanation_runtime=runtime,
@@ -188,21 +195,12 @@ def test_graph_preserves_itinerary_explanation_runtime_for_copy_generation() -> 
             schema_retry_limit=0,
         ),
     )
-    state["request"] = {
-        "request_id": "REQ-GRAPH",
-        "country": "KR",
-        "travel_month": 9,
-        "trip_type": "daytrip",
-        "destination_id": "KR-SOKCHO",
-        "include_festivals": False,
-        "themes": ("바다·해안",),
-    }
     state["profile"] = {"audit": {}}
     state["festival_gate"] = {"result": None, "audit": {"skipped": True}}
 
     result = graph.invoke(state)
 
-    output = result["planner"]["planner_output"]
+    output = _planner_output_from_result(result)
     item = output["itinerary"][0]
     assert item["copy_source"] == "llm_planner_copy"
     assert output["validation_result"]["planner_copy_generation_used_llm"] is True
@@ -230,12 +228,20 @@ def test_explain_itinerary_node_falls_back_when_v1_composer_rejects_copy() -> No
         _state(ItineraryExplanationRuntime(explanation_runtime=runtime, schema_retry_limit=0)),
     )
 
-    output = result["planner"]["planner_output"]
+    output = _planner_output_from_result(result)
     item = output["itinerary"][0]
     assert item["title"] == "해변"
     assert output["recommendation_reasons"] == ("속초 안에서 바다·해안 균형을 우선했습니다.",)
     assert output["validation_result"]["planner_copy_generation_used_llm"] is False
     assert "schema_failure" in output["explanation_audit"]["hidden_internal_notes"][-1]
+
+
+def _planner_output_from_result(result: Mapping[str, Any]) -> Mapping[str, Any]:
+    planner = result["planner"]
+    assert isinstance(planner, Mapping)
+    output = planner["planner_output"]
+    assert isinstance(output, Mapping)
+    return output
 
 
 def test_planner_copy_rejects_internal_seed_cluster_and_relevance_terms() -> None:

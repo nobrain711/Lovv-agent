@@ -1,0 +1,14 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "lineColor": "#475569"}}}%%
+flowchart TD
+  Input["city_select_input<br/>festival candidates"] --> Festival["Festival Verifier Agent"]
+  Festival --> Tools["FestivalVerifierTools"]
+  Tools --> DomainDDB["DynamoLookupTool<br/>TourKoreaDomainDataV2"]
+  DomainDDB --> Policies["theme / date / city gate"]
+  Policies --> Output["festival_gate.result<br/>or clarification / audit"]
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
+  classDef tool fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px;
+  class Festival agent;
+  class Tools,DomainDDB,Policies tool;
+  class Output output;

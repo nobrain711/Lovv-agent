@@ -71,11 +71,13 @@ def test_invoke_harness_uses_smoke_thread_id() -> None:
     harness = RecordingHarness()
     state = {"request": {"request_id": "case-1"}}
 
-    result = runner.invoke_harness(harness, state, case_id="case-1")
+    result = runner.invoke_harness(harness, state, case_id="case-1", actor_id="actor-1")
 
     assert result == {"ok": True}
     assert harness.payloads == [state]
-    assert harness.configs == [{"configurable": {"thread_id": "v2-smoke:case-1"}}]
+    assert harness.configs == [
+        {"configurable": {"thread_id": "v2-smoke-case-1", "actor_id": "actor-1"}},
+    ]
 
 
 def test_build_smoke_harness_can_use_mock_contract_nodes(monkeypatch: Any) -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lovv_agent_v2.agents.city_select.tools import build_attraction_filter
+from lovv_agent_v2.tools.destination_search import build_attraction_filter
 
 
 def test_filter_combines_preferred_and_disliked_city_ids() -> None:

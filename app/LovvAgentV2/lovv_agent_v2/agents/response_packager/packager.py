@@ -4,6 +4,10 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from lovv_agent_v2.agents.response_packager.itinerary_item_payload import (
+    build_itinerary_item_payload,
+)
+from lovv_agent_v2.agents.response_packager.notice import joined_notice, unsupported_notice
 from lovv_agent_v2.models.clarification import Clarification
 from lovv_agent_v2.models.schemas import (
     FestivalVerification,
@@ -25,22 +29,23 @@ def package_recommendation_response(
     recommendation_id: str | None = None,
     expires_at: str | None = None,
     notice: str | None = None,
-    response_status: str = "completed",
+    response_status: str = "modification_pending",
     clarification: Clarification | Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     request_payload = _request_payload(request)
     planner = _planner(planner_output)
     city = _selected_city(selected_city)
     internal_clarification = _clarification(clarification)
+    generated_notice = unsupported_notice(unsupported_conditions)
     user_notice = (
         internal_clarification.prompt
         if response_status == "END_WAIT_USER" and internal_clarification is not None
-        else notice
+        else notice or generated_notice
     )
     response = {
         "recommendationId": recommendation_id or request_payload["request_id"],
         "expiresAt": expires_at or _default_expires_at(),
-        "destination": _destination_payload(city, request_payload),
+        "destination": _destination_payload(city, request_payload, planner),
         "itinerary": _itinerary_payload(planner, request_payload),
         "explainability": _explainability_payload(
             planner,
@@ -55,6 +60,11 @@ def package_recommendation_response(
     }
     if internal_clarification is not None:
         response["clarification"] = internal_clarification.to_public_dict()
+    if planner is not None and planner.alternative_itinerary:
+        response["alternativeItinerary"] = _itinerary_items_payload(
+            planner.alternative_itinerary,
+            request_payload,
+        )
     if response_status == "END_WAIT_USER" and internal_clarification is None:
         raise SchemaValidationError("END_WAIT_USER response requires clarification")
     return response
@@ -63,11 +73,20 @@ def package_recommendation_response(
 def _destination_payload(
     selected_city: SelectedCity | None,
     request: Mapping[str, Any],
+    planner: PlannerOutput | None,
 ) -> dict[str, Any]:
+    request_destination_id = request.get("destination_id")
+    if request_destination_id is not None:
+        return {
+            "destinationId": request_destination_id,
+            "name": _planner_city_name(planner, request_destination_id),
+            "country": request["country"],
+            "region": None,
+        }
     if selected_city is None:
         return {
-            "destinationId": request.get("destination_id"),
-            "name": None,
+            "destinationId": None,
+            "name": _planner_city_name(planner, None),
             "country": request["country"],
             "region": None,
         }
@@ -79,16 +98,37 @@ def _destination_payload(
     }
 
 
+def _planner_city_name(planner: PlannerOutput | None, destination_id: Any) -> str | None:
+    if planner is None:
+        return None
+    for item in planner.itinerary:
+        if destination_id is not None and item.get("city_id") != destination_id:
+            continue
+        value = item.get("city_name_ko")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _itinerary_payload(
     planner: PlannerOutput | None,
     request: Mapping[str, Any],
 ) -> dict[str, Any]:
     if planner is None:
         return {"tripType": request["trip_type"], "days": []}
+    return _itinerary_items_payload(planner.itinerary, request)
+
+
+def _itinerary_items_payload(
+    itinerary: Sequence[Mapping[str, Any]],
+    request: Mapping[str, Any],
+) -> dict[str, Any]:
     days: dict[int, list[dict[str, Any]]] = {}
-    for sort_order, item in enumerate(planner.itinerary, start=1):
+    for sort_order, item in enumerate(itinerary, start=1):
         day = int(item.get("day", 1) or 1)
-        days.setdefault(day, []).append(_itinerary_item_payload(item, sort_order))
+        day_items = days.setdefault(day, [])
+        item_with_order = {**item, "order": len(day_items) + 1}
+        day_items.append(build_itinerary_item_payload(item_with_order, sort_order))
     return {
         "tripType": request["trip_type"],
         "days": [
@@ -96,36 +136,6 @@ def _itinerary_payload(
             for day, items in sorted(days.items(), key=lambda pair: pair[0])
         ],
     }
-
-
-def _itinerary_item_payload(item: Mapping[str, Any], sort_order: int) -> dict[str, Any]:
-    return {
-        "itemId": f"item-{sort_order}",
-        "contentId": item.get("placeId") or item.get("festivalId"),
-        "timeOfDay": item.get("slot"),
-        "sortOrder": sort_order,
-        "title": item.get("title"),
-        "body": item.get("body"),
-        "reason": item.get("reason"),
-        "moveMinutes": _optional_number(item, "moveMinutes", "move_minutes"),
-        "latitude": _optional_number(item, "latitude", "lat"),
-        "longitude": _optional_number(item, "longitude", "lng", "lon"),
-    }
-
-
-def _optional_number(item: Mapping[str, Any], *field_names: str) -> float | int | None:
-    for field_name in field_names:
-        value = item.get(field_name)
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, (int, float)):
-            return value
-        if isinstance(value, str):
-            try:
-                return float(value)
-            except ValueError:
-                continue
-    return None
 
 
 def _explainability_payload(
@@ -150,7 +160,7 @@ def _explainability_payload(
         "recommendationReasons": planner.recommendation_reasons,
         "itineraryFlowReason": planner.itinerary_flow_reason,
         "confidence": planner.confidence,
-        "userNotice": " ".join(planner.user_notice),
+        "userNotice": joined_notice(planner.user_notice, unsupported_conditions),
     }
 
 
@@ -239,20 +249,24 @@ def _festival_verification_tuple(
 
 def _request_payload(request: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "request_id": _first_present(request, "request_id", "requestId"),
-        "country": _first_present(request, "country"),
-        "travel_month": _first_present(request, "travel_month", "travelMonth"),
-        "trip_type": _first_present(request, "trip_type", "tripType"),
+        "request_id": _first_optional(
+            request,
+            "request_id",
+            "requestId",
+            "thread_id",
+            "threadId",
+        )
+        or "mock-v2-request",
+        "country": _first_optional(request, "country") or "KR",
+        "travel_month": _first_optional(request, "travel_month", "travelMonth"),
+        "trip_type": _first_optional(request, "trip_type", "tripType") or "modify",
         "destination_id": request.get("destination_id", request.get("destinationId")),
         "themes": tuple(request.get("themes", ())),
     }
 
 
-def _first_present(mapping: Mapping[str, Any], *keys: str) -> Any:
-    for key in keys:
-        if key in mapping:
-            return mapping[key]
-    raise SchemaValidationError(f"missing required request field: {keys[0]}")
+def _first_optional(mapping: Mapping[str, Any], *keys: str) -> Any:
+    return next((mapping[key] for key in keys if key in mapping), None)
 
 
 def _mapping(value: Any, field_name: str) -> dict[str, Any]:

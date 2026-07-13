@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from lovv_agent_v2.agents.profile.rds_mysql_rows import SqlParameters, SqlRow
-from lovv_agent_v2.agents.profile.rds_mysql_tool import (
+from lovv_agent_v2.tools.rds_mysql_rows import SqlParameters, SqlRow
+from lovv_agent_v2.tools.saved_itinerary_signals import (
     RdsSavedItinerarySignalsTool,
     RdsSavedItinerarySignalsToolConfig,
 )

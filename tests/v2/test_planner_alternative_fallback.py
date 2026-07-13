@@ -3,9 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from lovv_agent_v2.agents.planner.node import planner_node
 from lovv_agent_v2.agents.planner.subgraph import compile_planner_subgraph
-from lovv_agent_v2.agents.planner.external.travel_time import MatrixResponse, SnapResponse, TravelTimeProvider
+from lovv_agent_v2.tools.travel_time_provider import MatrixResponse, SnapResponse, TravelTimeProvider
 from lovv_agent_v2.agents.planner.steps.retry_alternative_city.node import should_retry_alternative_city
 
 
@@ -112,9 +111,9 @@ def test_planner_subgraph_retries_second_city_when_primary_city_is_too_thin() ->
     _assert_retry_result(result, search)
 
 
-def test_planner_node_does_not_retry_ranked_city_without_alternative_seeds() -> None:
+def test_planner_subgraph_does_not_retry_ranked_city_without_alternative_seeds() -> None:
     search = ThinThenAlternativeDestinationSearch()
-    result = planner_node(_state(search, include_alternative=False))
+    result = compile_planner_subgraph().invoke(_state(search, include_alternative=False))
 
     planner = cast(dict[str, object], result["planner"])
     output = cast(dict[str, object], planner["planner_output"])

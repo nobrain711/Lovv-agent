@@ -54,14 +54,14 @@ assemble_itinerary
 현재 정책:
 
 - raw 후보 중 active theme에 속한 장소를 유지한다.
-- soft 후보는 `best_soft * 0.6` 이상만 고려한다.
-- soft 후보도 active theme 밖이면 제외한다.
+- soft 후보는 상대 컷 없이 theme gate를 통과하면 고려한다.
+- preferred theme는 별도 검색이 아니라 raw/soft pool 안의 차순위 생존 신호로만 쓴다.
 - raw/soft가 같은 place id를 가리키면 하나로 merge하고 soft score를 보강한다.
 - trip type별 target count에 맞춰 theme quota를 적용한다.
 - 같은 subtype이 과도하게 반복되지 않도록 subtype cap을 적용한다.
 - 명시 seed가 없으면 active theme별 top 1을 semantic seed로 승격한다.
 
-중요한 점은 seed가 "무조건 포함해야 할 anchor 후보" 역할을 한다는 것이다. 축제 포함이면 confirmed festival이 seed로 들어갈 수 있고, 일반 anchor/discovery에서는 theme top 1 semantic seed가 anchor 역할을 한다.
+중요한 점은 seed가 "무조건 포함해야 할 anchor 후보" 역할을 한다는 것이다. 축제 포함이면 confirmed festival이 seed로 들어갈 수 있다. 단, `destination_id + include_festivals=false`인 direct anchor 경로는 supervisor가 city_select를 건너뛰므로 city_select의 place score/theme evidence seed가 없다. 이 경우 planner가 해당 city_id로 anchored retrieval을 직접 수행한 뒤, 명시 seed가 없으면 selected 후보 안에서 active theme별 top 1을 semantic seed로 승격한다.
 
 ### 3.2 Trip Type별 목표 수
 
@@ -118,16 +118,38 @@ anchor
 
 현재 기준:
 
-- 하루 총 이동시간: 150분 이하
-- 단일 leg 이동시간: 60분 이하
+- 하루 총 이동시간: 180분 이하
+- 단일 hard leg 이동시간: 120분 이하
+- `transport_pref == "walk"`일 때 soft leg 이동시간: 60분 이하
 
 trim 우선순위:
 
-1. 60분 초과 leg를 만드는 pair 중 seed가 아닌 후보를 제거한다.
+1. 120분 초과 hard leg를 만드는 pair 중 seed가 아닌 후보를 제거한다.
 2. 그래도 하루 총 이동시간이 길면 전체 route에서 이동 부담이 큰 non-seed 후보를 제거한다.
-3. seed는 가능한 한 보존한다.
+3. walk 선호가 있으면 60분 soft leg 초과도 trim 조건으로 본다.
+4. seed는 가능한 한 보존한다.
 
 이 정책 때문에 최종 itinerary 수가 working set 수보다 적을 수 있다. 이때 빠진 장소는 `route.reserve`와 `route_audit.trimmed_place_ids`에 남는다.
+
+### 3.7 Cross-Day Repair
+
+route trim으로 빠진 후보가 곧바로 버려지는 것은 아니다. 현재 구현은
+`cross_day_repair` 단계에서 reserve 후보를 다른 day에 넣었을 때 다음 조건을
+덜 깨는지 시뮬레이션한다.
+
+- 삽입 후 day total이 180분 이하인지
+- 삽입 후 max hard leg가 120분 이하인지
+- walk 선호가 있으면 soft leg 60분 이하인지
+- 해당 day의 target count를 과도하게 넘기지 않는지
+
+조건을 만족하면 해당 reserve 후보를 더 적합한 day에 재삽입하고,
+`route_audit.cross_day_rescued_place_ids`에 기록한다. 즉 route trim은 단순
+삭제가 아니라 "일단 빼고, 다른 날에 넣으면 괜찮은지 다시 본다"는 2단계
+정책이다.
+
+이 정책이 필요한 이유는 명확하다. 어떤 장소는 1일차 route에서는 120분 hard
+leg를 만들지만, 2일차 anchor 근처에 넣으면 이동 제약을 만족할 수 있다.
+기존의 day-local trim만 있으면 이런 후보가 불필요하게 사라진다.
 
 ## 4. 실제 Smoke 사례
 
@@ -385,7 +407,7 @@ fallback 발생 3건:
 
 ### Seed를 보존하되 seed가 없으면 보완한다
 
-축제나 대표 장소가 seed로 들어오면 해당 장소를 anchor로 우선 보존한다. seed가 없으면 active theme별 top 1을 semantic seed로 승격한다.
+축제나 city_select 대표 장소가 seed로 들어오면 해당 장소를 anchor로 우선 보존한다. direct anchor/no-festival처럼 city_select를 건너뛰는 경로에서는 planner가 도시 anchored retrieval을 먼저 수행하고, 그 결과 안에서 active theme별 top 1을 semantic seed로 승격한다.
 
 이 정책 덕분에 단일 anchor/discovery에서도 "무엇을 중심으로 하루를 시작할지"가 생긴다.
 
@@ -420,10 +442,27 @@ route 품질은 duration matrix에 크게 의존한다. ORS가 실패하거나 s
 
 다만 현재 planner는 day별 후보 수가 보통 3-4개 수준이므로 nearest-neighbor가 실용적이다.
 
-### 7.3 Reserve를 대체 일정으로 승격하는 정책
+### 7.3 Slot Replace와의 연결
+
+향후 장소 변경 수정은 `route_days`의 reserve 개념을 직접 활용하게 된다. 다만
+`planner_output.validation_result.itinerary_structure.reserve`를 수정 작업의
+정본으로 쓰는 것은 적절하지 않다. `validation_result`는 audit/diagnostic 성격이
+강하기 때문이다.
+
+수정 pipeline에서는 별도 working state가 필요하다.
+
+```text
+state.planner.modify_context.reserve_pool
+```
+
+slot replace는 이 reserve pool을 우선 사용하고, 후보를 삽입한 뒤 다시
+`route_days` 또는 동일한 travel-time 정책을 적용해야 한다. 이렇게 해야 "장소만
+바꿨는데 동선은 깨진 일정"을 막을 수 있다.
+
+### 7.4 Reserve를 대체 일정으로 승격하는 정책
 
 현재 reserve는 "빠진 후보"로만 남는다. 향후 alternative itinerary를 만들 때는 reserve를 날씨/혼잡/휴무 대체 후보로 재사용할 수 있다.
 
-### 7.4 `assemble_itinerary` 이름 혼동
+### 7.5 `assemble_itinerary` 이름 혼동
 
 현재 실제 배치는 `route_days`가 하고, `assemble_itinerary`는 output builder 역할이다. 장기적으로는 `assemble_itinerary`를 `build_planner_output` 또는 `finalize_itinerary`로 rename하는 편이 책임 경계가 명확하다.

@@ -78,6 +78,9 @@ class AwsClientProvider:
 
         return self._create_client("bedrock-runtime")
 
+    def create_agentcore_identity_client(self) -> Any:
+        return self._create_client("bedrock-agentcore")
+
     def create_runtime_clients(self) -> AwsRuntimeClients:
         """Create runtime clients used by AWS-backed graph adapters."""
 

@@ -9,12 +9,12 @@ from lovv_agent_v2.agents.city_select.retrieval.agent import (
     CitySelectRetrievalAgent,
     CitySelectRetrievalRequest,
 )
-from lovv_agent_v2.agents.city_select.domain.contracts import (
+from lovv_agent_v2.tools.city_select_contracts import (
     AttractionCandidate,
     PrunedCityGroups,
 )
 from lovv_agent_v2.agents.city_select.subgraph import compile_city_select_subgraph
-from lovv_agent_v2.agents.city_select.tools import CitySelectScoringTools, CitySelectTools
+from lovv_agent_v2.tools.runtime_containers import CitySelectScoringTools, CitySelectTools
 
 
 def _city_input() -> dict[str, object]:
@@ -44,6 +44,18 @@ def _discovery_city_input() -> dict[str, object]:
             "execution_mode": "city_discovery",
             "preferred_region_ids": ("KR-47-130", "KR-51-730"),
             "disliked_region_ids": ("KR-11-000",),
+        },
+    )
+    return payload
+
+
+def _rediscovery_city_input() -> dict[str, object]:
+    payload = dict(_discovery_city_input())
+    payload.update(
+        {
+            "preferred_region_ids": (),
+            "disliked_region_ids": (),
+            "disliked_city_ids": ("KR-51-170", "KR-51-150"),
         },
     )
     return payload
@@ -96,6 +108,31 @@ def test_retrieval_agent_applies_region_filters_to_nationwide_discovery() -> Non
             "theme": "역사·전통",
             "preferred_city_ids": ("KR-47-130", "KR-51-730"),
             "disliked_city_ids": ("KR-11-000",),
+        },
+    ]
+
+
+def test_retrieval_agent_applies_city_exclusions_to_rediscovery() -> None:
+    search = RecordingSearch()
+    tools = CitySelectTools(
+        destination_search=search,
+        dynamo_lookup=RecordingDynamoLookup(),
+        embedding=RecordingEmbedding(),
+    )
+
+    CitySelectRetrievalAgent(tools).run(
+        CitySelectRetrievalRequest(
+            candidate_input=_rediscovery_city_input(),
+            allowed_city_ids=None,
+        ),
+    )
+
+    assert search.calls == [
+        {
+            "city_id": None,
+            "theme": "역사·전통",
+            "preferred_city_ids": (),
+            "disliked_city_ids": ("KR-51-170", "KR-51-150"),
         },
     ]
 

@@ -24,7 +24,7 @@ from lovv_agent_v2.infra.dynamo_lookup import (
     DynamoLookupTool,
     normalize_festival_candidate,
 )
-from lovv_agent_v2.agents.city_select.retrieval.policy import (
+from lovv_agent_v2.tools.destination_policy import (
     ATTRACTION_ENTITY_TYPE,
     normalize_attraction_candidate,
     prune_cities,
@@ -32,12 +32,12 @@ from lovv_agent_v2.agents.city_select.retrieval.policy import (
 from lovv_agent_v2.agents.city_select.retrieval.flow import (
     retrieve_allowed_city_pool_by_theme,
 )
-from lovv_agent_v2.agents.city_select.tools import (
+from lovv_agent_v2.tools.destination_search import (
     DestinationSearchTool,
     build_attraction_filter,
     build_attraction_search_request,
-    build_city_select_tools,
 )
+from lovv_agent_v2.tools.factories import build_city_select_tools
 
 
 class RecordingAwsFactory:

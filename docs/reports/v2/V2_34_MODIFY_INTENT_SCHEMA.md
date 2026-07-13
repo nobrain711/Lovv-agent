@@ -9,17 +9,24 @@
 
 This document defines the **Intent Agent output** for itinerary modification.
 
-It does not redefine the front request. The front still sends:
+It does not redefine the front request. V2_38 is now the front input source of
+truth: request `currentOrder` is the canonical itinerary order for modify target
+resolution. Backend checkpoint/state is fallback only when request
+`currentOrder` is missing or empty.
+
+The request still sends:
 
 - `entryType: "modify"`
 - `threadId`
 - `itineraryRevision`
 - `rawModifyQuery`
-- full `currentOrder`
 
 The front does **not** send `edit_ops`.
 
-Intent parses `rawModifyQuery`, resolves target items against the current itinerary context, and emits a typed `modify_intent` for Supervisor/Planner.
+Intent parses `rawModifyQuery`, resolves target items against request
+`currentOrder`, and emits a typed `modify_intent` for Supervisor/Planner.
+If request `currentOrder` is unavailable, backend state itinerary context is used
+as a fallback.
 
 Current executable scope is intentionally narrow:
 
@@ -190,6 +197,42 @@ City change rules:
 5. `carry_over_festivals=true` unless the user explicitly drops festival mode.
 6. City change routes to city discovery/anchored rediscovery, not planner edit mode.
 7. If the city phrase is ambiguous, return `needs_clarification`.
+
+### 5.1 City Change Adapter Design
+
+City-change execution is not wired in the current step. The adapter should be added
+between Supervisor and City Select, not inside Intent.
+
+Adapter input:
+
+- `intent.modify_intent.city_change`
+- current checkpoint/session context
+- request `currentOrder` as canonical current itinerary order
+- backend itinerary order only as fallback
+- previous `city_select_input` or equivalent generation request context
+
+Adapter output:
+
+- a fresh `intent.city_select_input`
+- `execution_mode = "city_discovery"` unless `target_city_id` is present
+- `destination_id = target_city_id` when the user named a specific city
+- original themes/query/month/trip type carried over unless the modify utterance changes them
+- `preferred_region_ids`/city preference hints derived from `city_preference_query` when no target city is resolved
+- `disliked_region_ids` including cities already used in the same session
+
+Important exclusion rule:
+
+When rerunning city discovery for a modify city-change request, exclude both:
+
+1. the current itinerary city, and
+2. any city that was added or tried earlier in the same session.
+
+This prevents the rediscovery loop from returning to a city the user already moved
+away from, and prevents newly added session cities from being proposed again as a
+"different" destination. The exclusion should be carried as city ids, not names.
+
+The adapter may still allow the explicit `target_city_id` if the user directly named
+that city. In that case, exclusion applies to alternative/reserve candidates only.
 
 ---
 

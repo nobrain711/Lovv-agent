@@ -1,0 +1,16 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "lineColor": "#475569"}}}%%
+flowchart LR
+  Intent["intent.city_select_input<br/>or confirmation intent"] --> Profile["Profile Agent"]
+  Profile --> ProfileTable["DynamoDB Profile Table<br/>LovvAgentCore-LovvUserProfile"]
+  Profile --> SavedEvidence["Saved itinerary evidence<br/>RDS MySQL lovvdev"]
+  Profile --> Weights["build_profile_theme_weights"]
+  Weights --> Output["updated intent/profile<br/>theme_weights + audit"]
+  Profile --> Confirmation["confirmation update<br/>saved_trip_count + profile_update"]
+  Confirmation --> Output
+
+  classDef agent fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
+  classDef data fill:#ecfdf5,stroke:#059669,stroke-width:2px;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px;
+  class Profile agent;
+  class ProfileTable,SavedEvidence data;
+  class Output output;

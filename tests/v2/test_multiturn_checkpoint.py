@@ -111,6 +111,7 @@ def _ready_to_package_state() -> dict[str, object]:
             "destination_id": "KR-51-150",
             "include_festivals": False,
             "themes": ("바다·해안",),
+            "active_required_themes": ("바다·해안",),
         },
         "intent": {
             "intent_output": {

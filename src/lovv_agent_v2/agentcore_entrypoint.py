@@ -51,12 +51,13 @@ def handle_v2_invocation(event: Any, context: Any | None = None) -> dict[str, An
     thread_id = extract_thread_id(event, fallback=request_id)
     actor_id = extract_actor_id(event) or thread_id
     resume_value = extract_resume_value(event)
+    clarify_resume = _clarify_resume_value(event) if resume_value is None else None
     payload = (
-        Command(resume=resume_value)
-        if resume_value is not None
+        Command(resume=resume_value if resume_value is not None else clarify_resume)
+        if resume_value is not None or clarify_resume is not None
         else extract_graph_payload(event, request_id=request_id)
     )
-    if resume_value is None:
+    if resume_value is None and clarify_resume is None:
         payload = _payload_with_profile_evidence(
             payload,
             actor_id=actor_id,
@@ -111,6 +112,13 @@ def _payload_with_profile_evidence(
         return enriched
 
 
+def _clarify_resume_value(event: Any) -> dict[str, Any] | None:
+    decoded = _decode_json_if_needed(event)
+    if not isinstance(decoded, Mapping) or _entry_type(decoded) != "clarify":
+        return None
+    return extract_recommendation_payload(decoded)
+
+
 def extract_graph_payload(event: Any, *, request_id: str | None = None) -> dict[str, Any]:
     decoded = _decode_json_if_needed(event)
     if not isinstance(decoded, Mapping):
@@ -130,7 +138,7 @@ def extract_graph_payload(event: Any, *, request_id: str | None = None) -> dict[
             return payload
 
     raise ValueError(
-        "AgentCore invocation must contain a /recommendations request or V2 intent mock",
+        "AgentCore invocation must contain a /recommendations request payload",
     )
 
 
@@ -206,32 +214,9 @@ def _graph_payload_from_mapping(
     *,
     request_id: str | None,
 ) -> dict[str, Any] | None:
-    intent_output = payload.get("intent_output")
-    if isinstance(intent_output, Mapping):
-        case_id = _text_or_none(payload.get("id"))
-        return _state_from_intent_output(
-            intent_output,
-            request_id=request_id or case_id,
-        )
     if _looks_like_recommendation_request(payload):
         return _state_from_recommendation_request(payload, request_id=request_id)
     return None
-
-
-def _state_from_intent_output(
-    intent_output: Mapping[str, Any],
-    *,
-    request_id: str | None,
-) -> dict[str, Any]:
-    resolved_request_id = request_id or "agentcore-v2-mock"
-    return {
-        "request": _request_from_intent_output(
-            intent_output,
-            request_id=resolved_request_id,
-        ),
-        "intent": {"intent_output": dict(intent_output)},
-        "profile": {},
-    }
 
 
 def _state_from_recommendation_request(
@@ -255,27 +240,6 @@ def _state_from_recommendation_request(
     }
 
 
-def _request_from_intent_output(
-    intent_output: Mapping[str, Any],
-    *,
-    request_id: str,
-) -> dict[str, Any]:
-    return {
-        "request_id": request_id,
-        "country": intent_output["country"],
-        "travel_month": intent_output["travel_month"],
-        "travel_year": intent_output.get("travel_year"),
-        "trip_type": intent_output["trip_type"],
-        "destination_id": intent_output.get("destination_id"),
-        "include_festivals": intent_output["include_festivals"],
-        "themes": tuple(intent_output["active_required_themes"]),
-        "raw_query": intent_output["cleaned_raw_query"],
-        "congestion_pref": intent_output.get("congestion_pref", "neutral"),
-        "transport_pref": intent_output.get("transport_pref", "unknown"),
-        "user_location": intent_output.get("user_location"),
-    }
-
-
 def _request_from_recommendation_request(
     request: Mapping[str, Any],
     *,
@@ -291,9 +255,6 @@ def _request_from_recommendation_request(
         "include_festivals": request["includeFestivals"],
         "themes": tuple(request.get("activeRequiredThemes", request.get("themes", ()))),
         "raw_query": request.get("rawQuery", request.get("naturalLanguageQuery", "")),
-        "soft_preference_query": request.get("softPreferenceQuery", ""),
-        "congestion_pref": request.get("congestionPref", "neutral"),
-        "transport_pref": request.get("transportPref", "unknown"),
         "user_location": request.get("userLocation"),
     }
 

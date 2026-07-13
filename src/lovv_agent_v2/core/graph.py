@@ -10,6 +10,7 @@ from lovv_agent_v2.agents.profile.node import profile_node
 from lovv_agent_v2.agents.city_select.subgraph import compile_city_select_subgraph
 from lovv_agent_v2.agents.festival_verifier.node import festival_verifier_node
 from lovv_agent_v2.agents.planner.subgraph import compile_planner_subgraph
+from lovv_agent_v2.agents.planner.steps.weather_alternative.node import weather_alternative_node
 from lovv_agent_v2.agents.response_packager.explain_itinerary import explain_itinerary_node
 from lovv_agent_v2.agents.response_packager.node import response_packager_node
 from lovv_agent_v2.agents.supervisor.router import END_ROUTE, supervisor_node
@@ -39,6 +40,7 @@ def compile_v2_graph_with_nodes(
     workflow.add_node("profile", profile_handler)
     workflow.add_node("festival_verifier", festival_verifier_node)
     workflow.add_node("explain_itinerary", explain_itinerary_node)
+    workflow.add_node("weather_alternative", weather_alternative_node)
     workflow.add_node("response_packager", response_packager_node)
     city_select_subgraph = compile_city_select_subgraph()
     planner_subgraph = compile_planner_subgraph()
@@ -56,6 +58,7 @@ def compile_v2_graph_with_nodes(
             "city_select": "city_select",
             "planner": "planner",
             "explain_itinerary": "explain_itinerary",
+            "weather_alternative": "weather_alternative",
             "response_packager": "response_packager",
             END_ROUTE: END,
         },
@@ -65,6 +68,7 @@ def compile_v2_graph_with_nodes(
     workflow.add_edge("city_select", "supervisor")
     workflow.add_edge("planner", "supervisor")
     workflow.add_edge("explain_itinerary", "supervisor")
+    workflow.add_edge("weather_alternative", "supervisor")
     workflow.add_edge("response_packager", "supervisor")
 
     return workflow.compile(checkpointer=checkpointer)

@@ -33,6 +33,22 @@ def test_generation_fixture_state_uses_front_request_shape() -> None:
     assert state["request"]["softPreferenceQuery"] == "한적한 분위기."
 
 
+def test_generation_file_selector_ignores_live_payload_json(tmp_path: Path) -> None:
+    module = _load_runner()
+    (tmp_path / "valid.json").write_text(
+        '{"id":"valid","intent_output":{"country":"KR"}}',
+        encoding="utf-8",
+    )
+    (tmp_path / "valid_live_payload.json").write_text(
+        '{"entryType":"create","country":"KR"}',
+        encoding="utf-8",
+    )
+
+    files = module.selected_generation_files(tmp_path, case_id=None, limit=None)
+
+    assert [path.name for path in files] == ["valid.json"]
+
+
 def test_custom_cases_run_through_intent_node_without_live_runtime() -> None:
     module = _load_runner()
 

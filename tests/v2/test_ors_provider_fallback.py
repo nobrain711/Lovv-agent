@@ -5,9 +5,9 @@ from pathlib import Path
 
 from pytest import MonkeyPatch
 
-import lovv_agent_v2.agents.planner.external.agentcore_credentials as agentcore_credentials
-import lovv_agent_v2.agents.planner.external.ors_provider as ors_provider
-from lovv_agent_v2.agents.planner.external.ors_provider import (
+import lovv_agent_v2.tools.agentcore_credentials as agentcore_credentials
+import lovv_agent_v2.tools.ors_provider as ors_provider
+from lovv_agent_v2.tools.ors_provider import (
     OrsProviderConfig,
     OrsTravelTimeProvider,
 )

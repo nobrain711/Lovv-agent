@@ -17,9 +17,9 @@ from lovv_agent_v2.agents.planner.state_adapter import (
     route_days_step,
 )
 from lovv_agent_v2.agents.planner.subgraph import compile_planner_subgraph
-from lovv_agent_v2.agents.planner.external.ors_provider import OrsProviderConfig, OrsTravelTimeProvider
+from lovv_agent_v2.tools.ors_provider import OrsProviderConfig, OrsTravelTimeProvider
 from lovv_agent_v2.agents.planner.state.context import travel_time_provider
-from lovv_agent_v2.agents.planner.external.travel_time import (
+from lovv_agent_v2.tools.travel_time_provider import (
     MatrixResponse,
     SnapResponse,
     TravelTimeProvider,

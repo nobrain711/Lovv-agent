@@ -5,8 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import lovv_agent_v2.harness as harness_module
-from lovv_agent_v2.agents.intent.tools import IntentPromptRuntime
-from lovv_agent_v2.agents.response_packager.tools import ItineraryExplanationRuntime
+from lovv_agent_v2.tools.runtime_containers import IntentPromptRuntime, ItineraryExplanationRuntime
 from lovv_agent_v2.core.runtime_state import runtime_value
 from lovv_agent_v2.harness import LovvLangGraphV2Harness
 from lovv_agent_v2.infra.dynamo_lookup import DynamoLookupTool

@@ -11,7 +11,7 @@ from botocore.config import Config
 from lovv_agent_v2.models.schemas import SchemaValidationError
 
 PROFILE_SUPPLEMENT_SYSTEM_PROMPT: Final = (
-    "You are Lovv Profile Agent. Read the normalized intent_output JSON and "
+    "You are Lovv Profile Agent. Read the normalized city_select_input JSON and "
     "produce a concise personalization supplement for downstream travel city "
     "selection. Return JSON only with keys: profile_summary, "
     "soft_preference_keywords, caution_flags."
@@ -30,7 +30,7 @@ class BedrockRuntimeClient(Protocol):
 
 
 class ProfileSupplementGenerator(Protocol):
-    def generate(self, intent_output: Mapping[str, Any]) -> "ProfileSupplement": ...
+    def generate(self, city_select_input: Mapping[str, Any]) -> "ProfileSupplement": ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,14 +73,14 @@ class BedrockProfileSupplementGenerator:
     max_tokens: int = 512
     temperature: float = 0.0
 
-    def generate(self, intent_output: Mapping[str, Any]) -> ProfileSupplement:
+    def generate(self, city_select_input: Mapping[str, Any]) -> ProfileSupplement:
         response = self.client.converse(
             modelId=self.model_id,
             system=[{"text": PROFILE_SUPPLEMENT_SYSTEM_PROMPT}],
             messages=[
                 {
                     "role": "user",
-                    "content": [{"text": json.dumps(intent_output, ensure_ascii=False)}],
+                    "content": [{"text": json.dumps(city_select_input, ensure_ascii=False)}],
                 },
             ],
             inferenceConfig={

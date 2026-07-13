@@ -60,6 +60,11 @@ def package_recommendation_response(
     }
     if internal_clarification is not None:
         response["clarification"] = internal_clarification.to_public_dict()
+    if planner is not None and planner.alternative_itinerary:
+        response["alternativeItinerary"] = _itinerary_items_payload(
+            planner.alternative_itinerary,
+            request_payload,
+        )
     if response_status == "END_WAIT_USER" and internal_clarification is None:
         raise SchemaValidationError("END_WAIT_USER response requires clarification")
     return response
@@ -70,10 +75,18 @@ def _destination_payload(
     request: Mapping[str, Any],
     planner: PlannerOutput | None,
 ) -> dict[str, Any]:
+    request_destination_id = request.get("destination_id")
+    if request_destination_id is not None:
+        return {
+            "destinationId": request_destination_id,
+            "name": _planner_city_name(planner, request_destination_id),
+            "country": request["country"],
+            "region": None,
+        }
     if selected_city is None:
         return {
-            "destinationId": request.get("destination_id"),
-            "name": _planner_city_name(planner, request.get("destination_id")),
+            "destinationId": None,
+            "name": _planner_city_name(planner, None),
             "country": request["country"],
             "region": None,
         }
@@ -103,8 +116,15 @@ def _itinerary_payload(
 ) -> dict[str, Any]:
     if planner is None:
         return {"tripType": request["trip_type"], "days": []}
+    return _itinerary_items_payload(planner.itinerary, request)
+
+
+def _itinerary_items_payload(
+    itinerary: Sequence[Mapping[str, Any]],
+    request: Mapping[str, Any],
+) -> dict[str, Any]:
     days: dict[int, list[dict[str, Any]]] = {}
-    for sort_order, item in enumerate(planner.itinerary, start=1):
+    for sort_order, item in enumerate(itinerary, start=1):
         day = int(item.get("day", 1) or 1)
         day_items = days.setdefault(day, [])
         item_with_order = {**item, "order": len(day_items) + 1}

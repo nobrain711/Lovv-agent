@@ -242,6 +242,8 @@ class CitySelectInput:
     destination_label: str | None = None
     preferred_theme_ids: tuple[str, ...] = ()
     disliked_theme_ids: tuple[str, ...] = ()
+    preferred_city_ids: tuple[str, ...] = ()
+    disliked_city_ids: tuple[str, ...] = ()
     preferred_region_ids: tuple[str, ...] = ()
     disliked_region_ids: tuple[str, ...] = ()
     preferred_region_spans: tuple[str, ...] = ()
@@ -330,6 +332,16 @@ class CitySelectInput:
             self,
             "disliked_theme_ids",
             _string_tuple(self.disliked_theme_ids, "disliked_theme_ids"),
+        )
+        object.__setattr__(
+            self,
+            "preferred_city_ids",
+            _string_tuple(self.preferred_city_ids, "preferred_city_ids"),
+        )
+        object.__setattr__(
+            self,
+            "disliked_city_ids",
+            _string_tuple(self.disliked_city_ids, "disliked_city_ids"),
         )
         object.__setattr__(
             self,
@@ -442,6 +454,8 @@ class CitySelectInput:
             ),
             preferred_theme_ids=_mapping_get(payload, "preferred_theme_ids", default=()),
             disliked_theme_ids=_mapping_get(payload, "disliked_theme_ids", default=()),
+            preferred_city_ids=_mapping_get(payload, "preferred_city_ids", default=()),
+            disliked_city_ids=_mapping_get(payload, "disliked_city_ids", default=()),
             preferred_region_ids=_mapping_get(payload, "preferred_region_ids", default=()),
             disliked_region_ids=_mapping_get(payload, "disliked_region_ids", default=()),
             preferred_region_spans=_mapping_get(payload, "preferred_region_spans", default=()),

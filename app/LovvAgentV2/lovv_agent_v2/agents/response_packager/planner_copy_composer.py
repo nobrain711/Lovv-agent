@@ -18,7 +18,7 @@ from lovv_agent_v2.models.schemas import (
 )
 
 PLANNER_COPY_EXPLANATION_SCHEMA_NAME = "planner_copy_explanation_output"
-PLANNER_COPY_EXPLANATION_PROMPT_PATH = Path(__file__).with_name("prompts") / "planner_copy_explanation.v1.md"
+PLANNER_COPY_EXPLANATION_PROMPT_PATH = Path(__file__).with_name("prompts") / "planner_copy_explanation.v1.json"
 
 PLANNER_COPY_EXPLANATION_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -58,6 +58,11 @@ INTERNAL_EXPLANATION_TERMS = (
     "랭킹 공식",
     "ranking formula",
     "raw retrieval",
+    "seed",
+    "cluster",
+    "relevance",
+    "클러스터",
+    "관련도",
     "score audit",
     "dynamodb",
     "s3 vector",
@@ -255,4 +260,7 @@ def _summary_status(safe_summary: Mapping[str, Any]) -> str:
 
 
 def _prompt_text() -> str:
-    return PLANNER_COPY_EXPLANATION_PROMPT_PATH.read_text(encoding="utf-8")
+    prompt = json.loads(PLANNER_COPY_EXPLANATION_PROMPT_PATH.read_text(encoding="utf-8"))
+    if not isinstance(prompt, Mapping):
+        raise SchemaValidationError("planner copy prompt must be a JSON object")
+    return json.dumps(prompt, ensure_ascii=False, indent=2, sort_keys=True)

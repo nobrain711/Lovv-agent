@@ -47,6 +47,7 @@ def main() -> int:
             harness,
             initial_state,
             case_id=case_id,
+            actor_id=args.actor_id or args.persona_id or "v2-smoke",
         )
         summary = summarize_result(case_id, case_file, result)
         summaries.append(summary)
@@ -109,6 +110,7 @@ def load_env_file(path: Path) -> None:
                 continue
             key, value = parsed
             os.environ[key] = value
+    mirror_aws_region(os.environ)
 
 
 def parse_env_line(raw_line: str) -> tuple[str, str] | None:
@@ -121,6 +123,14 @@ def parse_env_line(raw_line: str) -> tuple[str, str] | None:
     key = key.strip()
     value = value.strip().strip('"').strip("'")
     return (key, value) if key else None
+
+
+def mirror_aws_region(env: Mapping[str, str]) -> None:
+    region = env.get("LOVV_AWS_REGION")
+    if not region:
+        return
+    os.environ.setdefault("AWS_REGION", region)
+    os.environ.setdefault("AWS_DEFAULT_REGION", region)
 
 
 def select_cases(case_dir: Path, *, case_id: str | None, limit: int | None) -> tuple[Path, ...]:
@@ -208,10 +218,16 @@ def invoke_harness(
     initial_state: dict[str, Any],
     *,
     case_id: str,
+    actor_id: str,
 ) -> Mapping[str, Any]:
     result = harness.invoke(
         initial_state,
-        graph_config={"configurable": {"thread_id": f"v2-smoke:{case_id}"}},
+        graph_config={
+            "configurable": {
+                "thread_id": f"v2-smoke-{case_id}",
+                "actor_id": actor_id,
+            },
+        },
     )
     if not isinstance(result, Mapping):
         raise TypeError("harness result must be a mapping")

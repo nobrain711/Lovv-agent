@@ -18,11 +18,18 @@
       "snow_days": 12,
       "humidity_pct": 65,
       "sunshine_hours": 64
+    },
+    "identity_map_file": "src/lovv_agent_v2/resources/city_identity_map.json",
+    "identity_map_generated_from": "20260630T001340Z",
+    "v2_identity_applied_city_count": 68,
+    "v2_identity_applied_row_count": 816,
+    "v2_identity_match_modes": {
+      "city_name_ko": 816
     }
   },
   "method": {
     "summary": "Relative monthly climate risk derived from available city climate tables.",
-    "unit": "city_id + month",
+    "unit": "v2_city_id + month",
     "thresholds": {
       "global": "p10/p25/p50/p75/p90 over all parsed city-month records.",
       "by_month": "p10/p25/p50/p75/p90 over parsed cities in the same month."
@@ -51,7 +58,8 @@
       "snow": [
         "snow_days"
       ]
-    }
+    },
+    "identity_mapping": "city_monthly weather rows use city_identity_map.json city_id/city_key/ddb_pk; climate source ids are preserved in data_quality.weather_source_city_id."
   },
   "thresholds": {
     "global": {
@@ -811,5 +819,6 @@
       }
     }
   },
-  "skipped_wikitext_cities": []
+  "skipped_wikitext_cities": [],
+  "identity_map_ref": "src/lovv_agent_v2/resources/city_identity_map.json"
 }

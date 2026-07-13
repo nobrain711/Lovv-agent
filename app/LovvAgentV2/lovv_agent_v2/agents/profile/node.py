@@ -6,9 +6,32 @@ from typing import Any
 from lovv_agent_v2.core.state import UnifiedAgentState
 from lovv_agent_v2.models.profile import LovvUserProfile, build_profile_theme_weights
 from lovv_agent_v2.models.schemas import CitySelectInput, SchemaValidationError
+from lovv_agent_v2.models.trip_intent import trip_intent_from_mapping
+
+CONFIRMATION_INTENT_VALUES = frozenset(
+    {
+        "itinerary_confirmed",
+        "itinerary_confirmation",
+        "confirm_itinerary",
+        "confirm",
+        "confirmed",
+        "일정_확정",
+    },
+)
+CONFIRMATION_FIELD_NAMES = (
+    "intent_type",
+    "intentType",
+    "action",
+    "entry_type",
+    "entryType",
+)
+
 
 def profile_node(state: UnifiedAgentState) -> dict:
     intent = _intent_payload(state)
+    if _is_itinerary_confirmation(intent):
+        return _profile_confirmation_update(state, intent)
+
     city_input = _city_select_input(intent)
     normalized_input = CitySelectInput.from_mapping(city_input).to_dict()
     profile = _profile_from_state(state)
@@ -23,6 +46,9 @@ def profile_node(state: UnifiedAgentState) -> dict:
 
     next_intent = dict(intent)
     next_intent["city_select_input"] = normalized_input
+    trip_intent = trip_intent_from_mapping(normalized_input)
+    if trip_intent is not None:
+        next_intent["trip_intent"] = trip_intent
     next_profile = _profile_payload(state)
     audit = weights.to_audit()
     next_profile["saved_trip_count"] = profile.saved_trip_count if profile is not None else 0
@@ -42,10 +68,60 @@ def _intent_payload(state: Mapping[str, Any]) -> dict[str, Any]:
     return dict(intent)
 
 
+def _profile_confirmation_update(
+    state: Mapping[str, Any],
+    intent: Mapping[str, Any],
+) -> dict[str, Any]:
+    profile = _profile_from_state(state)
+    next_profile = _profile_payload(state)
+    saved_trip_count = profile.saved_trip_count if profile is not None else 0
+    next_profile["saved_trip_count"] = saved_trip_count + 1
+    next_profile["profile_update"] = _confirmation_update_payload(intent)
+    next_profile["audit"] = {
+        "profile_update_requested": True,
+        "profile_update_reason": "itinerary_confirmed",
+    }
+    return {"intent": dict(intent), "profile": next_profile}
+
+
+def _confirmation_update_payload(intent: Mapping[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": "recorded",
+        "reason": "itinerary_confirmed",
+    }
+    for output_key, input_keys in (
+        ("recommendation_id", ("recommendation_id", "recommendationId")),
+        ("itinerary_id", ("itinerary_id", "itineraryId")),
+    ):
+        value = _first_text(intent, input_keys)
+        if value is not None:
+            payload[output_key] = value
+    return payload
+
+
+def _is_itinerary_confirmation(intent: Mapping[str, Any]) -> bool:
+    return any(
+        _normalized_intent_value(intent.get(field_name)) in CONFIRMATION_INTENT_VALUES
+        for field_name in CONFIRMATION_FIELD_NAMES
+    )
+
+
+def _normalized_intent_value(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _first_text(mapping: Mapping[str, Any], field_names: tuple[str, ...]) -> str | None:
+    for field_name in field_names:
+        value = mapping.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _city_select_input(intent: Mapping[str, Any]) -> Mapping[str, Any]:
     city_input = intent.get("city_select_input")
-    if city_input is None:
-        city_input = intent.get("intent_output")
     if not isinstance(city_input, Mapping):
         raise SchemaValidationError("intent.city_select_input is required")
     return city_input

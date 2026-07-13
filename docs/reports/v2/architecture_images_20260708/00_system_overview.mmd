@@ -1,0 +1,21 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter, Arial, sans-serif", "fontSize": "18px", "primaryColor": "#eef6ff", "primaryBorderColor": "#2563eb", "primaryTextColor": "#0f172a", "lineColor": "#475569", "tertiaryColor": "#f8fafc"}}}%%
+flowchart TD
+  Client["Client / Backend"] --> Runtime["AWS AgentCore Runtime<br/>LovvAgentCore_LovvAgentV2<br/>READY v3 / Python 3.12 / VPC"]
+  Runtime --> Entry["main.py<br/>BedrockAgentCoreApp"]
+  Entry --> Handler["handle_v2_invocation<br/>request / thread / actor / resume"]
+  Handler --> Harness["build_live_harness<br/>tools + memory + graph"]
+  Harness --> Graph["LangGraph V2"]
+  Graph --> Supervisor["Supervisor Router<br/>routing.next_node"]
+
+  Supervisor --> Agents["Worker Agents<br/>Intent / Profile / Festival / City<br/>Planner / Explain / Weather / Response"]
+  Agents --> Supervisor
+  Supervisor --> Response["Final response<br/>or END_WAIT_USER interrupt"]
+
+  Harness --> Deps["AWS dependencies<br/>Bedrock / S3 Vectors / DynamoDB<br/>RDS / ORS / AgentCore Memory"]
+
+  classDef core fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#0f172a;
+  classDef runtime fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b;
+  classDef output fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#7c2d12;
+  class Runtime,Entry runtime;
+  class Handler,Harness,Graph,Supervisor,Agents,Deps core;
+  class Response output;

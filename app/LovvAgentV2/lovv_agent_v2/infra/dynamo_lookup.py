@@ -9,10 +9,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from lovv_agent_v2.agents.city_select.retrieval_node import AttractionCandidate
+    class AttractionCandidate(Protocol):
+        place_id: str
+        city_id: str
+        title: str
+        theme_tags: tuple[str, ...]
+        latitude: float | None
+        longitude: float | None
+        ddb_pk: str | None
+        ddb_sk: str | None
 
 from lovv_agent_v2.infra.config import SearchBudgetSettings
 from lovv_agent_v2.models.schemas import SchemaValidationError
@@ -34,6 +42,8 @@ class FestivalCandidate:
     country: str
     city_id: str
     ddb_pk: str | None
+    ddb_sk: str | None
+    city_key: str | None
     city_name: str | None
     month: int
     theme: str | None
@@ -47,7 +57,12 @@ class FestivalCandidate:
     def to_dict(self) -> dict[str, Any]:
         """Return a serializable festival candidate payload."""
 
-        return asdict(self)
+        payload = asdict(self)
+        for key in ("PK", "SK", "pk", "sk"):
+            value = self.raw.get(key)
+            if value is not None:
+                payload[key] = value
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,7 +224,7 @@ def search_festival_city_seeds(
     normalized_month = _month(travel_month, "travel_month")
     normalized_year = _optional_positive_int(travel_year, "travel_year")
     normalized_city_id = _optional_text(city_id, "city_id")
-    normalized_city_key = _optional_city_key(city_key)
+    _optional_city_key(city_key)
     # Festival documents do not currently persist travel-theme fields. Keep the
     # argument for caller compatibility, but do not use it as a filter.
     del theme_pool
@@ -217,8 +232,8 @@ def search_festival_city_seeds(
     response = dynamodb.query_festival_candidates(
         country=normalized_country,
         travel_month=normalized_month,
-        city_id=normalized_city_id,
-        city_key=normalized_city_key,
+        city_id=None,
+        city_key=None,
         limit=limit,
     )
     # detail 문서에는 country 속성이 없거나(지역 단위 배포) 표기가 제각각이라
@@ -269,23 +284,6 @@ def search_festival_city_seeds(
     )
 
 
-def _to_legacy_city_pk(pk: str | None) -> str | None:
-    """전이기(pre-V2) 키 정규화 shim.
-
-    신규 vector metadata는 ddb_pk를 ``CITY#<대문자>``(예: ``CITY#GUNSAN``)로 기록하지만,
-    V2 이행 전 현재 DynamoDB는 ``CITY#Andong``처럼 도시명 첫 글자만 대문자(타이틀케이스)다.
-    도시명 세그먼트만 타이틀케이스로 맞춰 상세 조회 PK 불일치를 해소한다.
-    Dynamo가 대문자 키로 이행하면(V2) 이 함수와 호출부를 제거하면 된다.
-    """
-
-    if not pk:
-        return pk
-    prefix, separator, city = pk.partition("#")
-    if not separator or prefix != "CITY" or not city:
-        return pk
-    return f"{prefix}#{city.capitalize()}"
-
-
 def enrich_final_places(
     final_places: Sequence[AttractionCandidate],
     *,
@@ -295,9 +293,45 @@ def enrich_final_places(
 
     places: list[AttractionCandidate] = []
     warnings: list[DetailEnrichmentWarning] = []
+    keyed_candidates: list[tuple[AttractionCandidate, str, str]] = []
     for candidate in final_places:
-        # 전이기: 신규 vector ddb_pk(CITY#대문자)를 현 Dynamo 타이틀케이스로 정규화.
-        pk = _to_legacy_city_pk(candidate.ddb_pk)
+        pk = candidate.ddb_pk
+        sk = candidate.ddb_sk
+        if pk is not None and sk is not None:
+            keyed_candidates.append((candidate, pk, sk))
+
+    try:
+        detail_items = dynamodb.batch_get_detail_items(
+            (pk, sk) for _, pk, sk in keyed_candidates
+        )
+    except Exception as exc:
+        for candidate in final_places:
+            if candidate.ddb_pk is None or candidate.ddb_sk is None:
+                places.append(replace(candidate, details=None))
+                warnings.append(
+                    _detail_enrichment_warning(
+                        "missing_detail_key",
+                        candidate,
+                        "Missing ddb_pk or ddb_sk; details remain null.",
+                    ),
+                )
+                continue
+            places.append(replace(candidate, details=None))
+            warnings.append(
+                _detail_enrichment_warning(
+                    "dynamodb_detail_failure",
+                    candidate,
+                    "DynamoDB detail lookup failed; details remain null.",
+                    error_type=type(exc).__name__,
+                ),
+            )
+        return DetailEnrichmentResult(
+            places=tuple(places),
+            warnings=tuple(warnings),
+        )
+
+    for candidate in final_places:
+        pk = candidate.ddb_pk
         sk = candidate.ddb_sk
         if pk is None or sk is None:
             places.append(replace(candidate, details=None))
@@ -310,21 +344,7 @@ def enrich_final_places(
             )
             continue
 
-        try:
-            response = dynamodb.get_detail_item(pk=pk, sk=sk)
-            details = _extract_detail_item(response)
-        except Exception as exc:
-            places.append(replace(candidate, details=None))
-            warnings.append(
-                _detail_enrichment_warning(
-                    "dynamodb_detail_failure",
-                    candidate,
-                    "DynamoDB detail lookup failed; details remain null.",
-                    error_type=type(exc).__name__,
-                ),
-            )
-            continue
-
+        details = _extract_detail_item_from_batch(detail_items.get((pk, sk)))
         if details is None:
             places.append(replace(candidate, details=None))
             warnings.append(
@@ -359,6 +379,14 @@ def normalize_festival_candidate(item: Mapping[str, Any]) -> FestivalCandidate:
         ddb_pk=_optional_text(
             _first_optional(normalized, "ddb_pk", "city_key", "PK", "pk"),
             "ddb_pk",
+        ),
+        ddb_sk=_optional_text(
+            _first_optional(normalized, "ddb_sk", "SK", "sk"),
+            "ddb_sk",
+        ),
+        city_key=_optional_text(
+            _first_optional(normalized, "city_key", "ddb_pk", "PK", "pk"),
+            "city_key",
         ),
         city_name=_optional_text(
             _first_optional(normalized, "city_name", "city_name_ko"),
@@ -453,6 +481,14 @@ def _extract_detail_item(response: Mapping[str, Any]) -> dict[str, Any] | None:
         return None
     if not isinstance(item, Mapping):
         raise SchemaValidationError("dynamodb detail response.Item must be a mapping")
+    return _normalize_detail_overview(_plain_dynamodb_item(item))
+
+
+def _extract_detail_item_from_batch(item: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if item is None:
+        return None
+    if not isinstance(item, Mapping):
+        raise SchemaValidationError("dynamodb batch detail item must be a mapping")
     return _normalize_detail_overview(_plain_dynamodb_item(item))
 
 

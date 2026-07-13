@@ -162,6 +162,109 @@ response:
   destination.name: 강릉시
 ```
 
+### 3.1 2026-07-04 재현: 기존 destinationId가 남는 city-change loop
+
+별도 slot replace 검증 중 다음 순서로 다시 재현했다.
+
+```text
+session: v2-live-city-then-slot-0704-03
+
+1. create
+   input: v2_gen_07_nature_coast_3d2n_live_payload.json
+   result: 동해시 / KR-51-170 / 3일 10개
+
+2. modify city-change
+   rawModifyQuery: 도시는 강릉으로 바꿔줘.
+   request.destinationId: KR-51-170
+   intent.city_select_input.destination_id: KR-51-150
+```
+
+처음에는 `response_packager` 이후 다음 loop가 발생했다.
+
+```text
+response_packager
+-> supervisor
+-> response_packager
+-> supervisor
+-> ...
+```
+
+원인:
+
+- front modify payload의 `destinationId`는 "수정 전 현재 도시"를 가리킨다.
+- city-change intent가 만든 `intent.city_select_input.destination_id`는 "수정 후 목표 도시"를 가리킨다.
+- response packager가 request의 기존 `destinationId`를 우선해 응답 destination을 `KR-51-170`으로 만들었다.
+- supervisor는 `modify_intent.city_change.target_city_id = KR-51-150`와 응답 destination이 다르다고 보고 현재 modify response로 인정하지 못했다.
+
+수정:
+
+- city-change modify에 한해서 response packager가 `intent.city_select_input.destination_id`를 destination 기준으로 우선 사용한다.
+- slot-replace modify는 기존처럼 request/currentOrder의 destination을 우선한다.
+
+검증:
+
+```text
+tests:
+  tests/v2/test_response_packager_destination.py
+  tests/v2/test_supervisor_graph.py
+  tests/v2/test_modify_city_change_reanchor.py
+  tests/v2/test_planner_apply_edit_multi.py
+
+result:
+  30 passed
+
+live:
+  create:       16.966s / 동해시 / KR-51-170 / 10 items
+  city-change: 30.210s / 강릉시 / KR-51-150 / 10 items
+  slot-replace after city-change:
+    10.522s / 강릉시 유지
+    Day 1 slot 2: 소돌아들바위공원 -> 칠성산
+```
+
+### 3.2 Mixed raw query: city-change + slot replace
+
+다음처럼 한 문장에 도시 변경과 슬롯 변경이 함께 들어오는 경우도 확인했다.
+
+```text
+rawModifyQuery:
+  도시는 강릉으로 바꾸고 1일차 두 번째 장소도 바꿔줘.
+
+payload:
+  v2_mod_live_mixed_city_change_slot_replace_gen07.json
+```
+
+현재 rule parser 결과:
+
+```json
+{
+  "status": "ok",
+  "kind": "city_change",
+  "edit_ops": [],
+  "routing_hint": "planner_direct_anchor",
+  "city_change": {
+    "target_city_id": "KR-51-150",
+    "target_city_name": "강릉시"
+  }
+}
+```
+
+live 결과:
+
+```text
+session: v2-live-mixed-city-slot-0704-02
+create: 22.904s / 동해시 / KR-51-170 / 10 items
+mixed modify: 19.180s / 강릉시 / KR-51-150 / 10 items
+```
+
+결론:
+
+- 현재 구현은 mixed modify를 복합 수정으로 처리하지 않는다.
+- city-change가 우선 적용되고, slot replace는 `edit_ops`로 남지 않는다.
+- 따라서 사용자가 "도시도 바꾸고 장소도 바꿔줘"라고 말하면 현재는 "도시 변경 후 재생성"으로만 처리된다.
+- 이 동작은 사용자 의도 일부를 조용히 누락하므로 올바른 최종 정책이 아니다.
+- intent 단계에서 city-change와 slot replace가 한 요청에 함께 감지되면 `unsupported` 또는 `needs_clarification`으로 막아야 한다.
+- 후속 구현 항목: `intent.modify_parser`/LLM modify parser가 mixed modify를 `kind=city_change`로 단순 축약하지 않고, `reason_code=modify_mixed_city_and_slot_unsupported` 같은 명시적 응답으로 올리게 한다.
+
 ---
 
 ## 4. Place Replace Design Notes
@@ -433,3 +536,136 @@ city-change troubleshooting에서 얻은 교훈:
 - modify 경로는 이전 checkpoint state가 남아 있으므로 stale group을 항상 의식해야 한다.
 - Supervisor는 "어떤 output이 현재 modify request에 의해 생성된 것인가"를 판정할 수 있어야 한다.
 - 단순히 `response_payload` 존재 여부만 보면 modify loop가 쉽게 생긴다.
+
+---
+
+## 6. Targetless City Rediscovery Timeout
+
+### 증상
+
+`다른 도시로 바꿔줘` 요청을 같은 session에 넣으면 city rediscovery는 시작되지만 live smoke가 300-420초 timeout으로 끝났다.
+
+### 분리 진단
+
+- `intent`: 정상. `routing_hint=city_select_rediscovery`, `destination_id=None`, `disliked_city_ids=(기존 도시)`로 변환됨.
+- `city_select`: 정상. 약 3.9초, 기존 동해시를 제외하고 삼척시 선택.
+- `planner`: 정상. 약 3.5초, 삼척시 3일/10개 item 구성.
+- `explain_itinerary`: 정상. 약 3.5초.
+- `response_packager`: 정상.
+- `full_no_checkpoint`: 수정 전에는 `GraphRecursionError` 발생.
+
+### 원인
+
+`has_current_modify_response_payload()`가 city_change의 명시 `target_city_id` 또는 `target_city_name`이 있는 경우만 현재 수정 응답으로 인정했다.
+
+targetless rediscovery는 의도적으로 `target_city_id=None`, `target_city_name=None`이므로, response가 이미 생성된 뒤에도 Supervisor가 "현재 요청에 대한 응답이 아직 없다"고 판단했다. 그 결과 graph가 `explain_itinerary -> response_packager -> supervisor` 루프에 빠졌다.
+
+추가로 기존 생성 intent의 `preferred_region_ids/spans/names`가 남아 있어 "동해시 선호 + 동해시 제외"가 동시에 적용되는 충돌도 있었다.
+
+### 해결
+
+- targetless city_change에서는 response destinationId가 존재하고 `avoid_city_ids`에 포함되지 않으면 현재 modify response로 인정한다.
+- targetless rediscovery 진입 시 기존 `preferred_city_ids`, `preferred_region_ids`, `preferred_region_spans`, `preferred_region_names`를 비운다.
+
+### 재검증
+
+- `full_no_checkpoint`: 18.724초, `KR-51-230 / 삼척시`, 3일 일정.
+- live smoke:
+  - 기준 생성: `20260704T134409Z_intent-targetless-base-gen07.json`
+  - targetless modify: `20260704T134553Z_intent-targetless-rediscovery-fixed.json`
+  - 결과: `KR-51-230 / 삼척시`, 3일, 10 items, 28.721초.
+
+### 추가 표현 검증
+
+같은 session에서 유사한 targetless 표현도 확인했다.
+
+- `비슷한 분위기로 다른 지역으로 바꿔줘.`
+  - 결과: `KR-48-GOSEONG-GYEONGNAM / 고성군 (경상남도)`, 3일, 8 items, 28.587초.
+  - 증거: `20260704T135914Z_intent-targetless-variant-01.json`
+- `이번엔 다른 목적지로 다시 추천해줘.`
+  - 결과: `KR-51-230 / 삼척시`, 3일, 10 items, 44.468초.
+  - 증거: `20260704T140020Z_intent-targetless-variant-02.json`
+
+주의: 현재 정책은 "이번 요청의 currentOrder 도시"만 즉시 exclude한다. 따라서 같은 session에서 여러 번 targetless city-change를 반복하면, 직전 도시가 아닌 과거 추천 도시로 다시 돌아올 수 있다. 장기적으로는 `memory.modify_history.excluded_city_ids` 누적 정책을 city-change rediscovery에도 명확히 적용해야 한다.
+
+### Timing Instrumentation Follow-up
+
+유독 느린 live case를 정확히 분리하려면 `run_general_live_smoke.py` 또는 live harness에 stage timing을 남긴다.
+
+기록할 최소 구간:
+
+1. AgentCore/checkpointer load
+2. `intent`
+3. `profile`
+4. `festival_verifier`
+5. `city_select`
+6. `planner`
+7. `explain_itinerary`
+8. `response_packager`
+9. AgentCore/checkpointer write
+
+외부 호출 latency가 의심되는 경우에는 각 stage 내부에서 Bedrock embedding, S3 Vector query, DynamoDB lookup, ORS, Bedrock Converse copy generation을 별도 timing으로 분리한다.
+
+판정 기준:
+
+- node별 timing은 빠른데 full live만 느리면 checkpointer/replay/write 비용을 의심한다.
+- `explain_itinerary`만 흔들리면 Bedrock Converse copy generation 지연을 의심한다.
+- `city_select` 또는 `planner.retrieve_places`가 느리면 embedding/S3 Vector query 병목을 본다.
+- `route_days`가 느리면 ORS matrix/snap 호출과 route repair loop를 본다.
+
+---
+
+## 7. Slot Replace Stabilization Before Day-level Edit
+
+### 증상
+
+하루 전체 수정으로 넘어가기 전, 단일 slot replace와 같은 day multi-slot replace에서 다음 문제가 함께 관측됐다.
+
+- `1일차 세 번째`, `첫날 가운데 코스`, `마지막 코스` 같은 한국어 순번 표현이 deterministic parser에서 누락될 수 있었다.
+- 같은 day의 `2번째, 3번째 장소를 ...로 바꿔줘` 요청을 LLM fallback이 단일 op로 축소할 수 있었다.
+- replacement query에 theme가 포함되면 vector retrieval 단계에서 theme hard filter가 걸려 후보가 과도하게 줄었다.
+- query가 있는데 explicit theme가 없는 경우에도 기존 active theme가 replacement 후보 우선순위에 개입했다.
+- 새로 retrieval한 후보 중 기존 itinerary item이 다시 선택될 수 있었다.
+- multi/failed slot replace response가 이미 packaged된 뒤에도 Supervisor가 다시 `response_packager`로 보내는 loop 위험이 있었다.
+
+### 원인
+
+- modify parser가 숫자 순번 중심으로 작성되어 한국어 순번과 같은 day list target을 충분히 정규화하지 못했다.
+- LLM prompt fallback은 target 위치 해석을 보완하기 위한 경로였지만, rule parser가 이미 정확히 잡은 multi-op를 덮어쓸 수 있었다.
+- apply_edit의 retrieval `theme` 인자가 hard filter로 사용되어, 사용자의 "분위기/장소 유형" 요청이 theme sparse case에서 실패로 이어졌다.
+- active theme는 초회 생성의 맥락인데, query 기반 slot replace에서는 사용자가 방금 말한 replacement query보다 강하게 작동하면 안 된다.
+- Supervisor의 "현재 modify 응답인가" 판정이 single `applied_edit/failed_edit` 중심이라 `applied_edits/failed_edits` list를 충분히 보지 못했다.
+
+### 해결
+
+- deterministic parser에 `첫/두/세/네/마지막` 순번과 같은 day multi target parser를 추가했다.
+- rule parser가 multi-op를 만들었거나, LLM fallback이 `modify_target_unresolved`를 반환하면 rule 결과를 유지한다.
+- replacement retrieval은 항상 theme filter 없이 검색한다.
+- explicit `condition.theme`는 후보 정렬의 soft priority로만 사용한다.
+- query가 있고 explicit theme가 없으면 active theme soft priority도 적용하지 않고 raw similarity 순서를 우선한다.
+- query가 없고 reserve pool을 쓰는 replace에서만 기존 active theme soft priority를 유지한다.
+- fresh retrieval 후보에서 current itinerary content id를 제외한다.
+- Supervisor가 `applied_edits/failed_edits` list도 현재 request 결과로 인식하고, 이미 response payload가 있으면 graph를 종료한다.
+
+### 재검증
+
+- targeted tests: `56 passed`
+  - `test_modify_intent_rule_parser.py`
+  - `test_modify_intent_llm.py`
+  - `test_planner_apply_edit.py`
+  - `test_planner_apply_edit_theme_priority.py`
+  - `test_planner_apply_edit_multi.py`
+  - `test_planner_apply_edit_seed_policy.py`
+  - `test_planner_apply_edit_notice.py`
+  - `test_supervisor_graph.py`
+- live smoke:
+  - `20260705T053425Z_0705-modify-same-day-multi-theme-soft-a.json`
+    - same-day multi query replacement completed, two slots replaced.
+  - `20260705T054145Z_0705-modify-slot-position-rough-photo-a.json`
+    - rough slot-position query replacement completed.
+
+### 남은 범위
+
+- `1일차 전체 바꿔줘` 같은 day-level edit는 아직 slot replace가 아니라 별도 `day_regenerate` 계열로 설계해야 한다.
+- 복합 수정은 sequential fold로 처리하되, city_change와 slot_replace가 한 문장에 섞인 경우는 intent 단계에서 unsupported/clarification으로 막는 방향이 안전하다.
+- query 있는 slot replace는 now-current policy 기준으로 replacement query가 최우선이며, active theme는 개입하지 않는다.
