@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
+from lovv_agent_v2.tools.runtime_containers import ItineraryExplanationRuntime
 from lovv_agent_v2.tools.travel_time_provider import MatrixResponse, SnapResponse
 from lovv_agent_v2.agents.response_packager.clarification_resume import response_resume_update
 
@@ -131,6 +135,55 @@ def test_weather_alternative_resume_uses_mixed_after_indoor() -> None:
     assert "실내외 혼합" in payload["explainability"]["userNotice"]
 
 
+def test_weather_alternative_resume_explains_replaced_items() -> None:
+    runtime = PlannerCopyRuntime(
+        {
+            "structured_output": {
+                "item_copies": [
+                    {
+                        "item_ref": "item:0",
+                        "title": "설명된 실내 전시관",
+                        "body": "비 오는 날에도 머물기 좋은 실내 전시 공간입니다.",
+                        "reason": "야외 해변 대신 날씨 영향을 덜 받는 실내 후보입니다.",
+                    },
+                ],
+                "recommendation_reasons": ["날씨 영향을 줄이기 위해 실내 후보를 반영했습니다."],
+                "itinerary_flow_reason": "기존 동선을 유지하며 첫 장소만 실내로 조정했습니다.",
+            },
+        },
+    )
+
+    result = response_resume_update(
+        {
+            **_state(itinerary=(_item("attraction#outdoor", "해변 산책", 37.5, 129.1),)),
+            "runtime": {
+                "itinerary_explanation_runtime": ItineraryExplanationRuntime(
+                    explanation_runtime=runtime,
+                    schema_retry_limit=0,
+                ),
+            },
+            "planner": {
+                **_state()["planner"],
+                "planner_output": {
+                    **_state()["planner"]["planner_output"],
+                    "itinerary": (_item("attraction#outdoor", "해변 산책", 37.5, 129.1),),
+                },
+                "modify_context": {
+                    "reserve_pool": [
+                        _reserve("attraction#indoor", "실내 전시관", 37.5, 129.1),
+                    ],
+                },
+            },
+        },
+        _weather_alternative_response(),
+        {"selectedOptionId": "use_weather_alternative"},
+    )
+
+    item = result["response"]["response_payload"]["itinerary"]["days"][0]["items"][0]
+    assert item["title"] == "설명된 실내 전시관"
+    assert len(runtime.requests) == 1
+
+
 class FarTravelTimeProvider:
     def snap_places(self, places, transport_pref):
         return SnapResponse(places=tuple(places), excluded_place_ids=(), audit={})
@@ -260,3 +313,13 @@ def _reserve(
         "latitude": latitude,
         "longitude": longitude,
     }
+
+
+class PlannerCopyRuntime:
+    def __init__(self, response: dict[str, Any]) -> None:
+        self.response = response
+        self.requests: list[Mapping[str, Any]] = []
+
+    def __call__(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        self.requests.append(request)
+        return self.response

@@ -86,3 +86,38 @@ def test_response_packager_packages_unresolved_slot_clarification(monkeypatch) -
     assert payload["clarification"]["reasonCode"] == "modify_target_unresolved"
     assert "몇 번째 장소" in payload["explainability"]["userNotice"]
     assert payload["clarification"]["options"][0]["optionId"] == "revise_slot_target"
+
+
+def test_response_packager_packages_intent_target_unresolved_clarification(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "lovv_agent_v2.agents.response_packager.node.interrupt",
+        lambda payload: {"selectedOptionId": "revise_slot_target"},
+    )
+
+    result = response_packager_node(
+        {
+            "request": {
+                "entryType": "modify",
+                "threadId": "thread-001",
+                "itineraryRevision": "rev-001",
+                "rawModifyQuery": "멀리 있는 곳 바꿔줘.",
+            },
+            "intent": {
+                "intent_type": "modification",
+                "modify_intent": {
+                    "status": "needs_clarification",
+                    "kind": "slot_replace",
+                    "clarification": {
+                        "reason_code": "modify_target_unresolved",
+                        "prompt": "어떤 장소를 바꿀까요?",
+                        "options": [],
+                    },
+                },
+            },
+        },
+    )
+
+    payload = result["response"]["response_payload"]
+    assert payload["clarification"]["reasonCode"] == "modify_target_unresolved"
+    assert payload["clarification"]["options"][0]["optionId"] == "revise_slot_target"
+    assert result["response"]["clarification_resume"]["option_id"] == "revise_slot_target"

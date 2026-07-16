@@ -24,6 +24,8 @@ def has_current_modify_response_payload(
     state: Mapping[str, Any],
     modify_intent: Mapping[str, Any],
 ) -> bool:
+    if _has_current_response_payload(state):
+        return True
     if modify_intent.get("kind") in {"slot_replace", "day_regenerate"}:
         return _has_current_slot_replace_response(state)
     city_change = modify_intent.get("city_change")
@@ -131,6 +133,18 @@ def _has_current_slot_replace_response(state: Mapping[str, Any]) -> bool:
     if current_id is None:
         return slot_replace_applied(state)
     return isinstance(recommendation_id, str) and recommendation_id == current_id
+
+
+def _has_current_response_payload(state: Mapping[str, Any]) -> bool:
+    response = state.get("response")
+    if not isinstance(response, Mapping):
+        return False
+    payload = response.get("response_payload")
+    if not isinstance(payload, Mapping):
+        return False
+    current_id = _request_id(state)
+    recommendation_id = payload.get("recommendationId", payload.get("recommendation_id"))
+    return isinstance(current_id, str) and recommendation_id == current_id
 
 
 def planner_modify_context(state: Mapping[str, Any]) -> Mapping[str, Any]:

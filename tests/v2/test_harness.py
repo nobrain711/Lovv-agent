@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 from collections.abc import Mapping
 from typing import Any
 
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
+
 import lovv_agent_v2.harness as harness_module
 from lovv_agent_v2.tools.runtime_containers import IntentPromptRuntime, ItineraryExplanationRuntime
 from lovv_agent_v2.core.runtime_state import runtime_value
@@ -15,6 +18,7 @@ from lovv_agent_v2.infra.config import (
     LLM_NODE_EXPLANATION,
     LLM_NODE_INTENT,
     LlmSettings,
+    MemorySettings,
     RuntimeConfig,
 )
 from lovv_agent_v2.infra.repositories.dynamodb import DynamoDbRepository
@@ -41,6 +45,20 @@ class CapturingGraph:
         return {"config": config or {}}
 
 
+@dataclass(slots=True)
+class CapturingCommandGraph:
+    payloads: list[Command] = field(default_factory=list)
+
+    def invoke(
+        self,
+        payload: Command,
+        *,
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.payloads.append(payload)
+        return {"response": {"response_status": "completed"}, "config": config or {}}
+
+
 def test_harness_uses_context_runtime_without_checkpoint_payload_injection() -> None:
     graph = CapturingGraph()
     runtime = ItineraryExplanationRuntime()
@@ -61,6 +79,58 @@ def test_harness_uses_context_runtime_without_checkpoint_payload_injection() -> 
     assert graph.runtime_values[0]["runtime"] is runtime
     assert "itinerary_explanation_runtime" not in payload
     assert "runtime" not in payload
+
+
+def test_harness_wraps_dict_payload_with_trace_invocation(monkeypatch: Any) -> None:
+    graph = CapturingGraph()
+    traced_states: list[dict[str, Any]] = []
+
+    def trace_invocation(
+        state: dict[str, Any],
+        operation,
+    ) -> dict[str, Any]:
+        traced_states.append(state)
+        return operation()
+
+    monkeypatch.setattr(harness_module, "trace_invocation", trace_invocation)
+    harness = LovvLangGraphV2Harness(graph=graph, config=RuntimeConfig())
+
+    harness.invoke(
+        {"request": {"request_id": "REQ-1"}},
+        graph_config={"configurable": {"thread_id": "THREAD-1", "actor_id": "ACTOR-1"}},
+    )
+
+    assert traced_states[0]["request"] == {"request_id": "REQ-1"}
+    assert traced_states[0]["trace"]["recommendation_request_id"] == "REQ-1"
+    assert traced_states[0]["trace"]["thread_id"] == "THREAD-1"
+    assert traced_states[0]["trace"]["actor_id"] == "ACTOR-1"
+    assert traced_states[0]["trace"]["agent_run_id"].startswith("run-")
+
+
+def test_harness_wraps_resume_command_with_trace_invocation(monkeypatch: Any) -> None:
+    graph = CapturingCommandGraph()
+    traced_states: list[dict[str, Any]] = []
+
+    def trace_invocation(
+        state: dict[str, Any],
+        operation,
+    ) -> dict[str, Any]:
+        traced_states.append(state)
+        return operation()
+
+    monkeypatch.setattr(harness_module, "trace_invocation", trace_invocation)
+    harness = LovvLangGraphV2Harness(graph=graph, config=RuntimeConfig())
+
+    harness.invoke(
+        Command(resume={"selectedOptionId": "use_weather_alternative"}),
+        request_id="REQ-RESUME",
+        graph_config={"configurable": {"thread_id": "THREAD-1", "actor_id": "ACTOR-1"}},
+    )
+
+    assert traced_states[0]["request"] == {"request_id": "REQ-RESUME"}
+    assert traced_states[0]["trace"]["recommendation_request_id"] == "REQ-RESUME"
+    assert traced_states[0]["trace"]["thread_id"] == "THREAD-1"
+    assert graph.payloads[0].resume == {"selectedOptionId": "use_weather_alternative"}
 
 
 def test_harness_uses_explicit_runtime_context_without_checkpoint_payload() -> None:
@@ -110,6 +180,27 @@ def test_build_live_harness_wires_default_itinerary_explanation_runtime(
     assert graph.runtime_values[0]["runtime"] is runtime
 
 
+def test_build_live_harness_uses_local_checkpointer_when_memory_is_disabled(
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def compile_graph(*, checkpointer: Any | None = None) -> CapturingGraph:
+        captured["checkpointer"] = checkpointer
+        return CapturingGraph()
+
+    monkeypatch.setattr(harness_module, "compile_v2_graph", compile_graph)
+    monkeypatch.setattr(
+        harness_module,
+        "_build_live_graph_runtime",
+        lambda config: {"itinerary_explanation_runtime": ItineraryExplanationRuntime()},
+    )
+
+    harness_module.build_live_harness(config=RuntimeConfig())
+
+    assert isinstance(captured["checkpointer"], MemorySaver)
+
+
 def test_live_graph_runtime_uses_injected_aws_runtime_clients(monkeypatch: Any) -> None:
     s3_client = object()
     dynamodb_client = object()
@@ -135,6 +226,7 @@ def test_live_graph_runtime_uses_injected_aws_runtime_clients(monkeypatch: Any) 
         ),
     )
 
+    assert runtime["interrupts_enabled"] is True
     city_select_tools = runtime["city_select_tools"]
     assert city_select_tools.destination_search.s3_vectors.client is s3_client
     assert city_select_tools.dynamo_lookup.dynamodb.client is dynamodb_client
@@ -145,6 +237,37 @@ def test_live_graph_runtime_uses_injected_aws_runtime_clients(monkeypatch: Any) 
     assert runtime["planner_runtime"].embedding.embedding is city_select_tools.embedding
     assert runtime["travel_time_provider"] is not None
     assert runtime["itinerary_explanation_runtime"].dynamo_lookup is city_select_tools.dynamo_lookup
+
+
+def test_live_graph_runtime_keeps_interrupts_enabled_with_local_memory(
+    monkeypatch: Any,
+) -> None:
+    s3_client = object()
+    dynamodb_client = object()
+    bedrock_client = object()
+
+    class FakeClientProvider:
+        def create_runtime_clients(self) -> AwsRuntimeClients:
+            return AwsRuntimeClients(
+                s3_vectors=s3_client,
+                dynamodb=dynamodb_client,
+                bedrock_runtime=bedrock_client,
+            )
+
+    monkeypatch.setattr(
+        harness_module,
+        "create_boto3_client_provider",
+        lambda config: FakeClientProvider(),
+    )
+    runtime = harness_module._build_live_graph_runtime(
+        RuntimeConfig(
+            embeddings=EmbeddingSettings(model_id="embed-model"),
+            llm=LlmSettings(model_id="planner-model"),
+            memory=MemorySettings(enabled=False),
+        ),
+    )
+
+    assert runtime["interrupts_enabled"] is True
 
 
 def test_live_itinerary_explanation_runtime_uses_explanation_model(

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import time
 from typing import Any, Protocol
 
 from opentelemetry import trace
@@ -17,6 +18,7 @@ from opentelemetry.trace import Status, StatusCode
 from lovv_agent_v2.infra.config import S3VectorSettings
 from lovv_agent_v2.models.schemas import SchemaValidationError
 from lovv_agent_v2.common.telemetry import sanitize_text
+from lovv_agent_v2.common.telemetry_metrics import record_tool_call
 
 REPOSITORY_NAME = "S3VectorRepository"
 
@@ -48,6 +50,7 @@ class S3VectorRepository:
         # 일반 harness 실행에는 설정된 런타임 resource를 기본으로 넣는다.
         payload.setdefault("vectorBucketName", self.settings.bucket_name)
         payload.setdefault("indexName", self.settings.index_name)
+        started_at = time.perf_counter()
         with _TRACER.start_as_current_span("s3vectors.QueryVectors") as span:
             span.set_attribute("aws.service", "s3vectors")
             span.set_attribute("s3vectors.bucket", self.settings.bucket_name)
@@ -64,6 +67,8 @@ class S3VectorRepository:
                     Status(StatusCode.ERROR, sanitize_text(str(exc) or type(exc).__name__)),
                 )
                 raise
+            finally:
+                record_tool_call("s3vectors", "QueryVectors", _duration_ms(started_at))
 
 
 def extract_vector_records(response: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
@@ -142,6 +147,10 @@ def _theme_tags_sample(records: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
             if len(tags) >= 5:
                 return tuple(tags)
     return tuple(tags)
+
+
+def _duration_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
 
 
 __all__ = [

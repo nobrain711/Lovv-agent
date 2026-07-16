@@ -189,6 +189,51 @@ def test_intent_node_keeps_rule_multi_slot_replace_even_when_prompt_returns_sing
     assert modify_intent["audit"] == {"parser": "rule_v2"}
 
 
+def test_intent_node_retries_modify_prompt_schema_failure_before_rule_fallback() -> None:
+    runtime = SequentialIntentRuntime(
+        (
+            {"status": "ok", "kind": "slot_replace", "edit_ops": []},
+            {
+                "status": "ok",
+                "kind": "slot_replace",
+                "edit_ops": [
+                    {
+                        "target": {"target_day": 1, "target_order": 2},
+                        "replacement_query": "조용한 실내 전시",
+                    },
+                ],
+                "city_change": None,
+                "clarification": None,
+                "unsupported_reasons": [],
+                "routing_hint": "planner_apply_edit",
+                "audit": {"parser": "llm-retry"},
+            },
+        ),
+    )
+    state: UnifiedAgentState = {
+        "request": {
+            "entryType": "modify",
+            "threadId": "thread-001",
+            "itineraryRevision": "rev-001",
+            "rawModifyQuery": "첫날 두 번째 장소를 조용한 실내 전시로 바꿔줘.",
+            "currentOrder": [
+                _current_item("item-1", "attraction#one", 1),
+                _current_item("item-2", "attraction#two", 2),
+            ],
+        },
+    }
+
+    with invocation_runtime(
+        {"intent_prompt_runtime": {"runtime": runtime, "schema_retry_limit": 0}},
+    ):
+        output = intent_node(state)
+
+    modify_intent = output["intent"]["modify_intent"]
+    assert len(runtime.requests) == 2
+    assert modify_intent["audit"] == {"parser": "llm-retry"}
+    assert modify_intent["edit_ops"][0]["target"]["item_id"] == "item-2"
+
+
 def test_modify_prompt_validator_normalizes_replacement_query_to_hyde() -> None:
     result = validate_modify_prompt_output(
         {
@@ -492,6 +537,17 @@ class RecordingIntentRuntime:
     def __call__(self, request: dict[str, Any]) -> dict[str, Any]:
         self.requests.append(request)
         return {"structured_output": self.structured_output}
+
+
+class SequentialIntentRuntime:
+    def __init__(self, structured_outputs: tuple[dict[str, Any], ...]) -> None:
+        self.structured_outputs = structured_outputs
+        self.requests: list[dict[str, Any]] = []
+
+    def __call__(self, request: dict[str, Any]) -> dict[str, Any]:
+        self.requests.append(request)
+        index = min(len(self.requests) - 1, len(self.structured_outputs) - 1)
+        return {"structured_output": self.structured_outputs[index]}
 
 
 def _current_item(item_id: str, content_id: str, order: int) -> dict[str, object]:

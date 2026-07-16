@@ -9,6 +9,10 @@ from lovv_agent_v2.agents.planner.steps.weather_alternative.exposure import (
 )
 from lovv_agent_v2.tools.runtime_extractors import runtime_tools_from_value
 from lovv_agent_v2.agents.response_packager.packager import package_recommendation_response
+from lovv_agent_v2.agents.response_packager.weather_explanation import (
+    explained_weather_output,
+    planner_with_weather_alternative,
+)
 from lovv_agent_v2.agents.response_packager.weather_route_feasibility import (
     weather_route_feasible,
 )
@@ -26,9 +30,6 @@ from lovv_agent_v2.core.runtime_state import runtime_value
 from lovv_agent_v2.models.schemas import SchemaValidationError
 
 INDOOR_FALLBACK_QUERY = "실내 관광지 박물관 전시관 실내 체험"
-WEATHER_ALTERNATIVE_NOTICE = "날씨 영향을 줄일 수 있도록 실내 중심 대체 일정으로 조정했습니다."
-WEATHER_ALTERNATIVE_MIXED_NOTICE = "일부 장소는 실내외 혼합형이라 현장 날씨에 따라 체류 방식을 조정해 주세요."
-WEATHER_ALTERNATIVE_FAILURE_NOTICE = "실내 대체 후보가 부족하거나 동선이 맞지 않아 현재 일정으로 유지합니다."
 MAX_ROUTE_COMBO_CANDIDATES = 12
 
 
@@ -39,7 +40,10 @@ def weather_alternative_response_update(
 ) -> dict[str, Any]:
     planner_output = weather_planner_output(state)
     alternative = _alternative_itinerary(state, planner_output)
-    output = _planner_with_weather_alternative(planner_output, alternative)
+    output = explained_weather_output(
+        state,
+        planner_with_weather_alternative(planner_output, alternative),
+    )
     return {
         "response": {
             "response_status": "modification_pending",
@@ -157,35 +161,6 @@ def _indoor_candidates(
     return (*indoor, *mixed)
 
 
-def _planner_with_weather_alternative(
-    planner_output: Mapping[str, Any],
-    alternative: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
-    output = dict(planner_output)
-    validation = dict(_mapping(planner_output.get("validation_result")))
-    audit = dict(_mapping(validation.get("weather_audit")))
-    if alternative:
-        output["itinerary"] = tuple(dict(item) for item in alternative)
-        output["user_notice"] = _with_notice(output.get("user_notice"), WEATHER_ALTERNATIVE_NOTICE)
-        if _uses_mixed(alternative):
-            output["user_notice"] = _with_notice(
-                output["user_notice"],
-                WEATHER_ALTERNATIVE_MIXED_NOTICE,
-            )
-        audit["alternative_generation_status"] = "generated"
-        audit["alternative_includes_mixed"] = _uses_mixed(alternative)
-    else:
-        output["user_notice"] = _with_notice(output.get("user_notice"), WEATHER_ALTERNATIVE_FAILURE_NOTICE)
-        audit["alternative_generation_status"] = "no_candidate"
-    validation["weather_audit"] = audit
-    output["validation_result"] = validation
-    return output
-
-
-def _uses_mixed(items: Sequence[Mapping[str, Any]]) -> bool:
-    return any(_indoor_outdoor(item) == "mixed" for item in items)
-
-
 def _replacement_item(
     original: Mapping[str, Any],
     replacement: Mapping[str, Any],
@@ -259,19 +234,6 @@ def _indoor_outdoor(item: Mapping[str, Any]) -> str | None:
         if isinstance(metadata, Mapping):
             value = _text(metadata.get("indoor_outdoor", metadata.get("indoorOutdoor")))
     return value.lower() if value is not None else None
-
-
-def _with_notice(value: Any, notice: str) -> tuple[str, ...]:
-    notices = _notice_tuple(value)
-    return notices if notice in notices else (*notices, notice)
-
-
-def _notice_tuple(value: Any) -> tuple[str, ...]:
-    if isinstance(value, str) and value.strip():
-        return (value.strip(),)
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        return ()
-    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:

@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-ORS_API_BASE = "https://api.openrouteservice.org"
+ORS_API_BASE = "https://api.heigit.org/openrouteservice"
 EARTH_RADIUS_KM = 6371.0088
 DRIVING_KMH = 60.0
 

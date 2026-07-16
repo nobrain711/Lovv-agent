@@ -50,7 +50,7 @@ def day_regenerate_update(
         "changed_slots": changed_slots,
         "replacements": [_replacement_summary(replacement) for replacement in replacements],
     }
-    planner["planner_output"] = _planner_output(previous_output, itinerary, applied_edit)
+    planner["planner_output"] = _planner_output(previous_output, itinerary, (applied_edit,))
     planner["validation_result"] = planner["planner_output"]["validation_result"]
     context = _mapping(planner.get("modify_context"))
     planner["modify_context"] = _modify_context(

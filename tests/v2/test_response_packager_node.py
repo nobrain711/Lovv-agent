@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lovv_agent_v2.agents.response_packager.agent import ResponsePackagerAgent
 from lovv_agent_v2.agents.response_packager.clarification_resume import response_resume_update
+from lovv_agent_v2.agents.planner.state.context import planner_input
 from lovv_agent_v2.agents.response_packager.contracts import ResponsePackagerInput
 from lovv_agent_v2.agents.response_packager.packager import package_recommendation_response
 from lovv_agent_v2.agents.response_packager.node import response_packager_node
@@ -191,6 +192,37 @@ def test_response_packager_node_packages_modify_clarification(monkeypatch) -> No
     assert response["clarification_resume"]["then"] == "abort"
 
 
+def test_response_packager_node_skips_interrupt_when_runtime_disables_it(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "lovv_agent_v2.agents.response_packager.node.interrupt",
+        lambda payload: (_ for _ in ()).throw(AssertionError("interrupt should not run")),
+    )
+
+    result = response_packager_node(
+        {
+            "runtime": {"interrupts_enabled": False},
+            "request": {
+                "request_id": "REQ-MOD-NO-INTERRUPT",
+                "entryType": "modify",
+                "rawModifyQuery": "두 번째 장소 바꿔줘.",
+            },
+            "planner": {
+                "modify_context": {
+                    "failed_edit": {
+                        "reason_code": "slot_replace_no_candidate",
+                        "target": {"day": 1, "order": 2},
+                    },
+                },
+            },
+        },
+    )
+
+    response = result["response"]
+    assert response["response_status"] == "END_WAIT_USER"
+    assert response["response_payload"]["recommendationId"] == "REQ-MOD-NO-INTERRUPT"
+    assert "clarification_resume" not in response
+
+
 def test_response_packager_node_uses_resource_text_for_failed_slot_replace(monkeypatch) -> None:
     monkeypatch.setattr(
         "lovv_agent_v2.agents.response_packager.node.interrupt",
@@ -278,6 +310,59 @@ def test_response_resume_broadens_failed_slot_replace_for_retry() -> None:
     assert edit_op["seed_policy"]["policy"] == "theme_relaxed"
     assert "failed_edit" not in result["planner"]["modify_context"]
     assert result["response"] == {}
+
+
+def test_response_resume_anchor_uses_patched_city_input_over_stale_trip_intent() -> None:
+    response = {
+        "response_payload": {
+            "clarification": {
+                "reasonCode": "anchor_festival_conflict",
+                "options": [
+                    {
+                        "optionId": "continue_without_festival_in_anchor",
+                        "label": "이 도시에서 축제 없이 계속",
+                        "apply": {
+                            "includeFestivals": False,
+                            "destinationId": "KR-34-5",
+                        },
+                        "then": "anchor",
+                    },
+                ],
+            },
+        },
+    }
+    state = {
+        "intent": {
+            "trip_intent": {
+                "destination_id": "KR-34-5",
+                "include_festivals": True,
+            },
+            "city_select_input": {
+                "country": "KR",
+                "travel_month": 7,
+                "travel_year": 2026,
+                "trip_type": "2d1n",
+                "active_required_themes": ["바다·해안"],
+                "include_festivals": True,
+                "cleaned_raw_query": "보령 축제 해안 여행",
+                "soft_preference_query": "",
+                "destination_id": "KR-34-5",
+                "execution_mode": "anchored_place_search",
+            },
+        },
+        "response": response,
+    }
+
+    result = response_resume_update(
+        state,
+        response,
+        {"selectedOptionId": "continue_without_festival_in_anchor"},
+    )
+
+    assert "trip_intent" not in result["intent"]
+    planner_request = planner_input(result)
+    assert planner_request["city_id"] == "KR-34-5"
+    assert planner_request["selected_city"]["selection_source"] == "direct_anchor_without_city_select"
 
 
 def test_response_packager_node_resumes_with_checkpoint_option(monkeypatch) -> None:

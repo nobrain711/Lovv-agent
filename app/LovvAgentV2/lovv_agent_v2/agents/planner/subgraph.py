@@ -15,17 +15,27 @@ from lovv_agent_v2.agents.planner.steps.retry_alternative_city.node import (
 from lovv_agent_v2.agents.planner.steps.weather_alternative.node import (
     weather_alternative_node,
 )
+from lovv_agent_v2.common.telemetry import trace_node
 from lovv_agent_v2.core.state import UnifiedAgentState
 
 
 def compile_planner_subgraph(checkpointer: object | None = None) -> object:
     workflow = StateGraph(UnifiedAgentState)
-    workflow.add_node("retrieve_places", retrieve_places)
-    workflow.add_node("apply_edit", apply_edit_node)
-    workflow.add_node("route_days", route_days_step)
-    workflow.add_node("assemble_itinerary", assemble_itinerary_step)
-    workflow.add_node("retry_alternative_city", retry_alternative_city)
-    workflow.add_node("weather_alternative", weather_alternative_node)
+    workflow.add_node("retrieve_places", trace_node("planner.retrieve_places", retrieve_places))
+    workflow.add_node("apply_edit", trace_node("planner.apply_edit", apply_edit_node))
+    workflow.add_node("route_days", trace_node("planner.route_days", route_days_step))
+    workflow.add_node(
+        "assemble_itinerary",
+        trace_node("planner.assemble_itinerary", assemble_itinerary_step),
+    )
+    workflow.add_node(
+        "retry_alternative_city",
+        trace_node("planner.retry_alternative_city", retry_alternative_city),
+    )
+    workflow.add_node(
+        "weather_alternative",
+        trace_node("planner.weather_alternative", weather_alternative_node),
+    )
     workflow.set_conditional_entry_point(
         _entry_point,
         {"apply_edit": "apply_edit", "retrieve_places": "retrieve_places"},

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+import time
 from typing import Any, Protocol
 
 from opentelemetry import trace
@@ -17,6 +18,7 @@ from opentelemetry.trace import Status, StatusCode
 from lovv_agent_v2.infra.config import DynamoDbSettings
 from lovv_agent_v2.models.schemas import SchemaValidationError
 from lovv_agent_v2.common.telemetry import sanitize_text
+from lovv_agent_v2.common.telemetry_metrics import record_tool_call
 
 REPOSITORY_NAME = "DynamoDbRepository"
 
@@ -64,6 +66,7 @@ class DynamoDbRepository:
         if not isinstance(key, Mapping):
             raise SchemaValidationError("dynamodb key must be a mapping")
         request_key = dict(key)
+        started_at = time.perf_counter()
         with _TRACER.start_as_current_span("dynamodb.GetItem") as span:
             span.set_attribute("aws.service", "dynamodb")
             span.set_attribute("dynamodb.table", self.settings.table_name)
@@ -85,6 +88,8 @@ class DynamoDbRepository:
                     Status(StatusCode.ERROR, sanitize_text(str(exc) or type(exc).__name__)),
                 )
                 raise
+            finally:
+                record_tool_call("dynamodb", "GetItem", _duration_ms(started_at))
 
     def get_detail_item(
         self,
@@ -133,6 +138,7 @@ class DynamoDbRepository:
                 "ConsistentRead": consistent_read,
             },
         }
+        started_at = time.perf_counter()
         with _TRACER.start_as_current_span("dynamodb.BatchGetItem") as span:
             span.set_attribute("aws.service", "dynamodb")
             span.set_attribute("dynamodb.table", table)
@@ -165,6 +171,8 @@ class DynamoDbRepository:
                     Status(StatusCode.ERROR, sanitize_text(str(exc) or type(exc).__name__)),
                 )
                 raise
+            finally:
+                record_tool_call("dynamodb", "BatchGetItem", _duration_ms(started_at))
 
     def batch_get_city_visitor_stats(
         self,
@@ -199,6 +207,7 @@ class DynamoDbRepository:
             keys.append({"PK": {"S": pk}, "SK": {"S": sk}})
         table = self.settings.table_name
         pending: dict[str, Any] = {table: {"Keys": keys}}
+        started_at = time.perf_counter()
         with _TRACER.start_as_current_span("dynamodb.BatchGetItem") as span:
             span.set_attribute("aws.service", "dynamodb")
             span.set_attribute("dynamodb.table", table)
@@ -238,6 +247,8 @@ class DynamoDbRepository:
                     Status(StatusCode.ERROR, sanitize_text(str(exc) or type(exc).__name__)),
                 )
                 raise
+            finally:
+                record_tool_call("dynamodb", "BatchGetItem", _duration_ms(started_at))
 
     def query_items(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """Run a query against the configured table."""
@@ -246,6 +257,7 @@ class DynamoDbRepository:
             raise SchemaValidationError("dynamodb query request must be a mapping")
         payload = dict(request)
         payload.setdefault("TableName", self.settings.table_name)
+        started_at = time.perf_counter()
         with _TRACER.start_as_current_span("dynamodb.Query") as span:
             span.set_attribute("aws.service", "dynamodb")
             span.set_attribute("dynamodb.table", self.settings.table_name)
@@ -266,6 +278,8 @@ class DynamoDbRepository:
                     Status(StatusCode.ERROR, sanitize_text(str(exc) or type(exc).__name__)),
                 )
                 raise
+            finally:
+                record_tool_call("dynamodb", "Query", _duration_ms(started_at))
 
     def query_all_items(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """Query across all result pages, merging returned items."""
@@ -294,10 +308,14 @@ class DynamoDbRepository:
             raise SchemaValidationError("dynamodb scan request must be a mapping")
         payload = dict(request)
         payload.setdefault("TableName", self.settings.table_name)
-        response = self.client.scan(**payload)
-        if not isinstance(response, Mapping):
-            raise SchemaValidationError("dynamodb scan response must be a mapping")
-        return dict(response)
+        started_at = time.perf_counter()
+        try:
+            response = self.client.scan(**payload)
+            if not isinstance(response, Mapping):
+                raise SchemaValidationError("dynamodb scan response must be a mapping")
+            return dict(response)
+        finally:
+            record_tool_call("dynamodb", "Scan", _duration_ms(started_at))
 
     def scan_all_items(
         self,
@@ -449,6 +467,10 @@ def _attribute_text(value: Any) -> str | None:
         if isinstance(raw, str) and raw.strip():
             return raw.strip()
     return None
+
+
+def _duration_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
 
 
 __all__ = [

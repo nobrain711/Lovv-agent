@@ -14,7 +14,9 @@ from lovv_agent_v2.agents.planner.steps.weather_alternative.node import weather_
 from lovv_agent_v2.agents.response_packager.explain_itinerary import explain_itinerary_node
 from lovv_agent_v2.agents.response_packager.node import response_packager_node
 from lovv_agent_v2.agents.supervisor.router import END_ROUTE, supervisor_node
+from lovv_agent_v2.common.telemetry import trace_node
 from lovv_agent_v2.core.state import UnifiedAgentState
+from lovv_agent_v2.models.schemas import SchemaValidationError
 
 GraphNode = Callable[[UnifiedAgentState], Mapping[str, Any]]
 
@@ -35,17 +37,35 @@ def compile_v2_graph_with_nodes(
 ) -> object:
     workflow = StateGraph(UnifiedAgentState)
 
-    workflow.add_node("intent", intent_handler)
-    workflow.add_node("supervisor", supervisor_node)
-    workflow.add_node("profile", profile_handler)
-    workflow.add_node("festival_verifier", festival_verifier_node)
-    workflow.add_node("explain_itinerary", explain_itinerary_node)
-    workflow.add_node("weather_alternative", weather_alternative_node)
-    workflow.add_node("response_packager", response_packager_node)
+    workflow.add_node("intent", trace_node("intent", intent_handler))
+    workflow.add_node("supervisor", trace_node("supervisor", supervisor_node))
+    workflow.add_node("profile", trace_node("profile", profile_handler))
+    workflow.add_node(
+        "festival_verifier",
+        trace_node("festival_verifier", festival_verifier_node),
+    )
+    workflow.add_node(
+        "explain_itinerary",
+        trace_node("explain_itinerary", explain_itinerary_node),
+    )
+    workflow.add_node(
+        "weather_alternative",
+        trace_node("weather_alternative", weather_alternative_node),
+    )
+    workflow.add_node(
+        "response_packager",
+        trace_node("response_packager", response_packager_node),
+    )
     city_select_subgraph = compile_city_select_subgraph()
     planner_subgraph = compile_planner_subgraph()
-    workflow.add_node("city_select", city_select_subgraph)
-    workflow.add_node("planner", planner_subgraph)
+    workflow.add_node(
+        "city_select",
+        trace_node("city_select", _subgraph_node(city_select_subgraph)),
+    )
+    workflow.add_node(
+        "planner",
+        trace_node("planner", _subgraph_node(planner_subgraph)),
+    )
 
     workflow.set_entry_point("intent")
     workflow.add_edge("intent", "supervisor")
@@ -80,4 +100,14 @@ def _route_from_supervisor(state: UnifiedAgentState) -> str:
         return END_ROUTE
     next_node = routing.get("next_node")
     return next_node if isinstance(next_node, str) else END_ROUTE
+
+
+def _subgraph_node(subgraph: Any) -> GraphNode:
+    def node(state: UnifiedAgentState) -> Mapping[str, Any]:
+        result = subgraph.invoke(state)
+        if not isinstance(result, Mapping):
+            raise SchemaValidationError("V2 subgraph must return a mapping")
+        return result
+
+    return node
 

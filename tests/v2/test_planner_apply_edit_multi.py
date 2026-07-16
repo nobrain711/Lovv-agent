@@ -27,6 +27,10 @@ def test_apply_edit_applies_multiple_slots_in_same_day() -> None:
     assert planner["modify_context"]["applied_edits"][0]["replacement"]["content_id"] != (
         planner["modify_context"]["applied_edits"][1]["replacement"]["content_id"]
     )
+    assert planner["planner_output"]["validation_result"]["explanation_item_place_ids"] == (
+        "attraction#new-1",
+        "attraction#new-2",
+    )
 
 
 def test_apply_edit_applies_slots_across_days() -> None:
@@ -60,6 +64,9 @@ def test_apply_edit_applies_slots_across_days() -> None:
         (1, 2, "첫 교체 후보"),
         (2, 1, "둘째 교체 후보"),
     ]
+    assert result["planner"]["planner_output"]["validation_result"][
+        "explanation_item_place_ids"
+    ] == ("attraction#new-1", "attraction#new-2")
 
 
 def test_apply_edit_handles_mixed_query_and_reserve_operations() -> None:
@@ -91,6 +98,66 @@ def test_apply_edit_handles_mixed_query_and_reserve_operations() -> None:
         "attraction#retrieved",
         "attraction#reserve",
     ]
+    assert planner["planner_output"]["validation_result"]["explanation_item_place_ids"] == (
+        "attraction#retrieved",
+        "attraction#reserve",
+    )
+
+
+def test_apply_edit_explanation_scope_excludes_previous_request_history() -> None:
+    result = apply_edit_node(
+        {
+            "request": _request_current_order(),
+            "intent": _slot_replace_intent(("op-current", 1, 2)),
+            "planner": {
+                "planner_output": _planner_output(),
+                "modify_context": {
+                    "reserve_pool": [_candidate("attraction#new-current", "현재 교체 후보")],
+                    "applied_edits": [
+                        {
+                            "request_id": "REQ-PREVIOUS",
+                            "op_id": "op-previous",
+                            "replacement": {"content_id": "attraction#old-history"},
+                        },
+                    ],
+                },
+            },
+        },
+    )
+
+    planner = result["planner"]
+    assert [edit["op_id"] for edit in planner["modify_context"]["applied_edits"]] == [
+        "op-current",
+    ]
+    assert planner["planner_output"]["validation_result"]["explanation_item_place_ids"] == (
+        "attraction#new-current",
+    )
+
+
+def test_apply_edit_partial_success_explains_only_applied_replacement() -> None:
+    result = apply_edit_node(
+        {
+            "request": _request_current_order(),
+            "intent": _slot_replace_intent(("op-success", 1, 2), ("op-failure", 1, 3)),
+            "planner": {
+                "planner_output": _planner_output(),
+                "modify_context": {
+                    "reserve_pool": [_candidate("attraction#only-candidate", "유일 후보")],
+                },
+            },
+        },
+    )
+
+    planner = result["planner"]
+    assert [edit["op_id"] for edit in planner["modify_context"]["applied_edits"]] == [
+        "op-success",
+    ]
+    assert [edit["reason_code"] for edit in planner["modify_context"]["failed_edits"]] == [
+        "slot_replace_no_candidate",
+    ]
+    assert planner["planner_output"]["validation_result"]["explanation_item_place_ids"] == (
+        "attraction#only-candidate",
+    )
 
 
 def _slot_replace_intent(*ops: tuple[str, int, int] | tuple[str, int, int, str | None]) -> dict[str, object]:

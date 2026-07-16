@@ -124,6 +124,32 @@ class ResponseClarificationPackagingTest(unittest.TestCase):
         self.assertEqual(payload["apply"]["activeRequiredThemes"], [])
         self.assertTrue(payload["apply"]["festivalThemeAgnostic"])
 
+    def test_unsupported_region_is_a_valid_wait_user_reason(self) -> None:
+        clarification = Clarification(
+            reason_code="unsupported_region",
+            prompt="현재는 국내 여행지만 추천할 수 있습니다.",
+            options=(
+                ClarificationOption(
+                    option_id="revise_conditions",
+                    label="국내 여행지로 다시 입력",
+                    apply=ClarificationApply(),
+                    then="abort",
+                ),
+            ),
+        )
+
+        response = package_recommendation_response(
+            planner_output=None,
+            request=request_payload(),
+            selected_city=None,
+            recommendation_id="REC-UNSUPPORTED-REGION",
+            expires_at="2026-06-30T00:00:00Z",
+            response_status="END_WAIT_USER",
+            clarification=clarification,
+        )
+
+        self.assertEqual(response["clarification"]["reasonCode"], "unsupported_region")
+
     def test_helper_texts_are_loaded_from_editable_resource(self) -> None:
         self.assertEqual(
             clarification_helper_text(

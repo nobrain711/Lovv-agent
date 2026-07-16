@@ -4,6 +4,10 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from lovv_agent_v2.agents.planner.domain.place_model import PlannerPlace
+from lovv_agent_v2.agents.planner.steps.apply_edit.explanation_scope import (
+    EXPLANATION_MARKERS,
+    explanation_place_ids,
+)
 
 REPLACEMENT_NOTICE = "요청한 장소를 같은 일정 안에서 대체했습니다."
 PARTIAL_NOTICE_TEMPLATE = "{total}개 수정 중 {applied}개를 반영했고, {failed}개는 반영하지 못했습니다."
@@ -27,13 +31,14 @@ def applied_update(
         "replacement": _replacement_summary(replacement),
         "changed_slot": {"day": target.get("day"), "order": target.get("order")},
     }
-    planner["planner_output"] = _planner_output(previous_output, itinerary, applied_edit)
-    planner["validation_result"] = planner["planner_output"]["validation_result"]
     context = _mapping(planner.get("modify_context"))
+    applied_edits = (*_mapping_sequence(context.get("applied_edits")), applied_edit)
+    planner["planner_output"] = _planner_output(previous_output, itinerary, applied_edits)
+    planner["validation_result"] = planner["planner_output"]["validation_result"]
     planner["modify_context"] = _modify_context(
         planner,
         applied_edit=applied_edit,
-        applied_edits=(*_mapping_sequence(context.get("applied_edits")), applied_edit),
+        applied_edits=applied_edits,
         reserve_pool=_remaining_reserve_pool(context.get("reserve_pool"), replacement),
     )
     return {"planner": planner, "memory": _memory_update(state, target)}
@@ -78,12 +83,15 @@ def finalized_update(state: Mapping[str, Any], total_edit_count: int) -> dict[st
 def _planner_output(
     previous_output: Mapping[str, Any],
     itinerary: tuple[dict[str, Any], ...],
-    applied_edit: Mapping[str, Any],
+    applied_edits: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     validation = dict(_mapping(previous_output.get("validation_result")))
+    for marker in EXPLANATION_MARKERS:
+        validation.pop(marker, None)
     validation["planner_status_gate"] = "ok"
     validation["modification_status"] = "applied"
-    validation["applied_edit"] = dict(applied_edit)
+    validation["applied_edit"] = dict(applied_edits[-1])
+    validation["explanation_item_place_ids"] = explanation_place_ids(applied_edits)
     notice = _with_notice(previous_output.get("user_notice", ()))
     return {
         "itinerary": itinerary,

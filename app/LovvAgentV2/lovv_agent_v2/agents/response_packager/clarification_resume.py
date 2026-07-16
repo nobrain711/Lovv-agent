@@ -57,6 +57,7 @@ def _rerun_update(state: Mapping[str, Any], action: Mapping[str, Any]) -> dict[s
     city_input = _patched_city_input(state, _mapping(action.get("apply")))
     next_intent = dict(_mapping(state.get("intent", {})))
     next_intent["intent_type"] = "create"
+    next_intent.pop("trip_intent", None)
     next_intent["city_select_input"] = city_input
     next_intent["clarification_resume"] = dict(action)
     return {

@@ -18,6 +18,7 @@ from lovv_agent_v2.infra.adapters.bedrock_converse import (
 from lovv_agent_v2.models.schemas import SchemaValidationError
 
 MODIFY_PROMPT_SCHEMA_NAME: Final = "lovv_v2_modify_intent_output"
+MIN_MODIFY_PROMPT_RETRY_LIMIT: Final = 1
 
 MODIFY_PROMPT_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -58,7 +59,7 @@ def prompt_modify_intent_from_request(
     result = invoke_structured_output(
         runtime=runtime,
         request=build_modify_prompt_request(request),
-        retry_limit=retry_limit,
+        retry_limit=max(retry_limit, MIN_MODIFY_PROMPT_RETRY_LIMIT),
         validator=lambda payload: validate_modify_prompt_output(
             payload,
             request=request,

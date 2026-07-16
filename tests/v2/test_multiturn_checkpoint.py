@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from lovv_agent_v2.core.mock_graph import compile_v2_mock_graph
+from lovv_agent_v2.core.graph import compile_v2_graph_with_nodes
 from lovv_agent_v2.harness import LovvLangGraphV2Harness
 from lovv_agent_v2.infra.config import RuntimeConfig
 
@@ -87,6 +88,29 @@ def test_runtime_tools_are_not_checkpointed_with_harness_context() -> None:
     assert "runtime" not in graph.get_state(config).values
 
 
+def test_weather_clarification_resumes_from_response_packager_checkpoint() -> None:
+    graph = compile_v2_graph_with_nodes(
+        intent_handler=lambda state: {},
+        profile_handler=lambda state: {"profile": {"audit": {}}},
+        checkpointer=MemorySaver(),
+    )
+    config = {"configurable": {"thread_id": "v2-weather-resume", "actor_id": "v2-weather-resume"}}
+
+    first = graph.invoke(_weather_alternative_state(), config=config)
+
+    assert "__interrupt__" in first
+    interrupt_payload = first["__interrupt__"][0].value
+    assert interrupt_payload["clarification"]["reasonCode"] == "weather_alternative_available"
+
+    second = graph.invoke(
+        Command(resume={"selectedOptionId": "keep_primary_itinerary"}),
+        config=config,
+    )
+
+    assert second["response"]["response_status"] == "modification_pending"
+    assert second["response"]["clarification_resume"]["option_id"] == "keep_primary_itinerary"
+
+
 def _ask_node(state: _InterruptState) -> dict[str, str]:
     if state.get("decision"):
         return {}
@@ -164,3 +188,20 @@ def _ready_to_package_state() -> dict[str, object]:
             "validation_result": {"itinerary_explanation_item_count": 1},
         },
     }
+
+
+def _weather_alternative_state() -> dict[str, object]:
+    state = _ready_to_package_state()
+    planner = dict(state["planner"])
+    planner_output = dict(planner["planner_output"])
+    validation = dict(planner_output["validation_result"])
+    validation["itinerary_explanation_item_count"] = 1
+    validation["weather_audit"] = {
+        "status": "alternative_available",
+        "evaluation_stage": "post_explain",
+    }
+    planner_output["validation_result"] = validation
+    planner["planner_output"] = planner_output
+    planner["validation_result"] = validation
+    state["planner"] = planner
+    return state

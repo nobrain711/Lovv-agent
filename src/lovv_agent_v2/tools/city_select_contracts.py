@@ -39,7 +39,13 @@ class AttractionCandidate:
     details: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        for key in ("source", "provenance"):
+            value = self.metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                payload["source"] = value.strip()
+                break
+        return payload
 
 
 @dataclass(frozen=True, slots=True)

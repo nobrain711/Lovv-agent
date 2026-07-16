@@ -4,6 +4,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+_WRAPPER_KEYS = ("payload", "input", "request", "body", "prompt")
+
 
 def decode_json_if_needed(value: Any) -> Any:
     if isinstance(value, bytes):
@@ -21,25 +23,59 @@ def decode_json_if_needed(value: Any) -> Any:
     return value
 
 
-def extract_resume_value(event: Any) -> Any | None:
+def _candidate_mappings(event: Any) -> tuple[Mapping[str, Any], ...]:
     decoded = decode_json_if_needed(event)
     if not isinstance(decoded, Mapping):
-        return None
-    if "resume" in decoded:
-        return decoded["resume"]
-    if "resumeValue" in decoded:
-        return decoded["resumeValue"]
+        return ()
+    candidates = [decoded]
+    for key in _WRAPPER_KEYS:
+        if key not in decoded:
+            continue
+        nested = decode_json_if_needed(decoded[key])
+        if isinstance(nested, Mapping):
+            candidates.append(nested)
+    return tuple(candidates)
+
+
+def extract_resume_value(event: Any) -> Any | None:
+    for payload in _candidate_mappings(event):
+        if "resume" in payload:
+            return payload["resume"]
+        if "resumeValue" in payload:
+            return payload["resumeValue"]
     return None
 
 
 def extract_thread_id(event: Any, fallback: str | None = None) -> str | None:
-    decoded = decode_json_if_needed(event)
-    if not isinstance(decoded, Mapping):
-        return fallback
-    session_id = decoded.get("sessionId")
-    if isinstance(session_id, str) and session_id.strip():
-        return session_id.strip()
+    for payload in _candidate_mappings(event):
+        session_id = payload.get("sessionId")
+        if isinstance(session_id, str) and session_id.strip():
+            return session_id.strip()
     return fallback
+
+
+def extract_request_id(event: Any) -> str | None:
+    for payload in _candidate_mappings(event):
+        for key in ("requestId", "request_id", "invocationId", "sessionId"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        headers = payload.get("headers")
+        if isinstance(headers, Mapping):
+            for key in ("x-request-id", "X-Request-Id", "x-amzn-trace-id"):
+                value = headers.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return None
+
+
+def extract_actor_id(event: Any) -> str | None:
+    for payload in _candidate_mappings(event):
+        for key in ("actorId", "actor_id", "userId"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
 
 
 def interrupt_response(result: Any) -> dict[str, Any] | None:

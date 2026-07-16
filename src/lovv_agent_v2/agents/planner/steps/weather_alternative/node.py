@@ -11,6 +11,7 @@ from lovv_agent_v2.agents.planner.steps.weather_alternative.resource import (
     WeatherRiskIndex,
     load_default_weather_risk_index,
 )
+from lovv_agent_v2.common.telemetry_lifecycle import emit_weather_result
 from lovv_agent_v2.core.runtime_state import runtime_value
 from lovv_agent_v2.core.state import UnifiedAgentState
 
@@ -20,7 +21,9 @@ def weather_alternative_node(state: UnifiedAgentState) -> dict[str, object]:
     planner_output = _mapping(planner.get("planner_output"))
     itinerary = _mapping_sequence(planner_output.get("itinerary"))
     if not itinerary:
-        return {"planner": _planner_with_unavailable_weather(planner, planner_output, "empty_itinerary")}
+        updated = _planner_with_unavailable_weather(planner, planner_output, "empty_itinerary")
+        emit_weather_result(state, updated)
+        return {"planner": updated}
     summary = summarize_exposure(itinerary)
     city_id = _city_id(planner_output, itinerary)
     travel_month = _travel_month(state)
@@ -45,6 +48,7 @@ def weather_alternative_node(state: UnifiedAgentState) -> dict[str, object]:
     planner["planner_output"] = output
     planner["validation_result"] = validation
     planner["weather_risk"] = validation["weather_audit"]
+    emit_weather_result(state, planner)
     return {"planner": planner}
 
 

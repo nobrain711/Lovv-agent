@@ -1,6 +1,7 @@
 {
   "name": "LovvAgentCore",
   "version": 2,
+  "managedBy": "CDK",
   "tags": {
     "agentcore:created-by": "agentcore-cli",
     "agentcore:project-name": "LovvAgentCore",
@@ -14,8 +15,6 @@
       "entrypoint": "main.py",
       "codeLocation": "app/LovvAgentV2/",
       "runtimeVersion": "PYTHON_3_12",
-      "networkMode": "PUBLIC",
-      "protocol": "HTTP",
       "envVars": [
         {
           "name": "LOVV_AWS_REGION",
@@ -44,6 +43,10 @@
         {
           "name": "LOVV_EXPLANATION_LLM_MODEL_ID",
           "value": "openai.gpt-oss-120b-1:0"
+        },
+        {
+          "name": "LOVV_SEARCH_RAW_SOFT_TOP_K",
+          "value": "50"
         },
         {
           "name": "LOVV_SEARCH_PER_THEME_TOP_K",
@@ -83,7 +86,7 @@
         },
         {
           "name": "LOVV_AGENTCORE_WORKLOAD_NAME",
-          "value": "LovvAgentCore_LovvAgentV2"
+          "value": "LovvAgentCore_LovvAgentV2-cy3tYk7nV4"
         },
         {
           "name": "LOVV_AGENTCORE_USER_ID",
@@ -116,23 +119,46 @@
         {
           "name": "OTEL_PYTHON_STARLETTE_EXCLUDED_URLS",
           "value": "ping"
+        },
+        {
+          "name": "AGENT_OBSERVABILITY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OTEL_TRACES_SAMPLER",
+          "value": "always_on"
         }
       ],
+      "networkMode": "VPC",
+      "networkConfig": {
+        "subnets": [
+          "subnet-0b3d1d99edd282504",
+          "subnet-0e04f80cfb58e0f35"
+        ],
+        "securityGroups": [
+          "sg-0c50468427a3239ac"
+        ]
+      },
+      "protocol": "HTTP",
       "tags": {
         "RuntimeVersion": "v2"
       }
     }
   ],
   "memories": [],
+  "knowledgeBases": [],
   "credentials": [
     {
       "authorizerType": "ApiKeyCredentialProvider",
       "name": "ors_service_key"
     }
   ],
-  "payments": [],
   "evaluators": [],
   "onlineEvalConfigs": [],
   "agentCoreGateways": [],
-  "policyEngines": []
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "payments": []
 }

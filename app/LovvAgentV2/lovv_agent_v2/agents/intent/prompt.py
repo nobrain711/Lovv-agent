@@ -10,7 +10,7 @@ from lovv_agent_v2.infra.adapters.bedrock_converse import (
     build_structured_converse_request,
     invoke_structured_output,
 )
-from lovv_agent_v2.agents.intent.parser import theme_labels
+from lovv_agent_v2.agents.intent.parser import clean_preference_query, theme_labels
 from lovv_agent_v2.agents.intent.prompts.intent_normalization import INTENT_PROMPT_TEXT
 from lovv_agent_v2.agents.intent.prompt_regions import canonical_prompt_region_updates
 from lovv_agent_v2.agents.intent.prompt_schema import (
@@ -83,7 +83,7 @@ def build_intent_prompt_request(request: Mapping[str, Any]) -> dict[str, Any]:
         schema_description="Lovv V2 prompt-based intent output",
         reasoning_effort="low",
     )
-    request_payload["inferenceConfig"] = {"maxTokens": 512, "temperature": 0}
+    request_payload["inferenceConfig"] = {"maxTokens": 2048, "temperature": 0}
     return request_payload
 
 
@@ -106,9 +106,15 @@ def validate_intent_prompt_output(
     )
     if not city_input_payload["active_required_themes"] and preferred_theme_ids:
         city_input_payload["active_required_themes"] = theme_labels(preferred_theme_ids)
+    cleaned_raw_query = _fallback_cleaned_raw_query(
+        normalized_payload,
+        request=request,
+        city_input_payload=city_input_payload,
+        preferred_theme_ids=preferred_theme_ids,
+    )
     city_input_payload.update(
         {
-            "cleaned_raw_query": normalized_payload["cleaned_raw_query"],
+            "cleaned_raw_query": cleaned_raw_query,
             "soft_preference_query": normalized_payload["soft_preference_query"],
             "unsupported_conditions": normalized_payload["unsupported_conditions"],
             "congestion_pref": normalized_payload["congestion_pref"],
@@ -209,6 +215,32 @@ def _request_raw_query(request: Mapping[str, Any]) -> str:
         request.get("rawQuery", request.get("naturalLanguageQuery", "")),
     )
     return value if isinstance(value, str) else ""
+
+
+def _fallback_cleaned_raw_query(
+    payload: Mapping[str, Any],
+    *,
+    request: Mapping[str, Any] | None,
+    city_input_payload: Mapping[str, Any],
+    preferred_theme_ids: tuple[str, ...],
+) -> str:
+    prompt_query = payload.get("cleaned_raw_query")
+    if isinstance(prompt_query, str) and prompt_query.strip():
+        return prompt_query.strip()
+    raw_query = _request_raw_query({} if request is None else request)
+    cleaned_raw_query = clean_preference_query(raw_query)
+    if cleaned_raw_query:
+        return cleaned_raw_query
+    theme_query = _theme_query_text(city_input_payload.get("active_required_themes", ()))
+    if theme_query:
+        return theme_query
+    return _theme_query_text(theme_labels(preferred_theme_ids))
+
+
+def _theme_query_text(value: Any) -> str:
+    if not isinstance(value, (list, tuple)):
+        return ""
+    return " ".join(item.strip() for item in value if isinstance(item, str) and item.strip())
 
 
 def _normalize_soft_congestion(payload: dict[str, Any]) -> None:

@@ -65,6 +65,11 @@ def intent_node(state: UnifiedAgentState) -> dict[str, Any]:
     next_intent = {} if fresh_create_request else dict(intent)
     if prompt_result is not None:
         next_intent.update(prompt_result.intent_updates)
+        if isinstance(request, Mapping):
+            _merge_rule_preference_fields(
+                next_intent,
+                parse_initial_query(_request_raw_query(request)),
+            )
         _reconcile_preference_fields(next_intent)
     next_intent.setdefault("intent_type", "create")
     next_intent["city_select_input"] = normalized_input
@@ -255,6 +260,38 @@ def _reconcile_preference_fields(intent: dict[str, Any]) -> None:
     intent["clarifying_question"] = PREFERENCE_CLARIFYING_QUESTION
     intent["contradiction_reasons"] = validation.contradiction_reasons
     set_contradiction_clarification(intent)
+
+
+def _merge_rule_preference_fields(
+    intent: dict[str, Any],
+    preference_result: IntentPreferenceResult,
+) -> None:
+    if not preference_result.contradiction_reasons:
+        return
+    for field_name, values in (
+        ("preferred_theme_ids", preference_result.preferred_theme_ids),
+        ("disliked_theme_ids", preference_result.disliked_theme_ids),
+        ("preferred_region_ids", preference_result.preferred_region_ids),
+        ("disliked_region_ids", preference_result.disliked_region_ids),
+        ("preferred_region_spans", preference_result.preferred_region_spans),
+        ("disliked_region_spans", preference_result.disliked_region_spans),
+        ("unresolved_region_spans", preference_result.unresolved_region_spans),
+        ("preferred_region_names", preference_result.preferred_region_names),
+        ("disliked_region_names", preference_result.disliked_region_names),
+    ):
+        merged = _ordered_union(_text_tuple(intent.get(field_name, ())), values)
+        intent[field_name] = merged
+        city_input = intent.get("city_select_input")
+        if isinstance(city_input, dict):
+            city_input[field_name] = merged
+
+
+def _ordered_union(left: Sequence[str], right: Sequence[str]) -> tuple[str, ...]:
+    values: list[str] = []
+    for item in (*left, *right):
+        if item not in values:
+            values.append(item)
+    return tuple(values)
 
 
 def _text_tuple(value: Any) -> tuple[str, ...]:

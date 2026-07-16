@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from lovv_agent_v2.common.telemetry_threading import submit_with_context
 from lovv_agent_v2.tools.city_select_contracts import (
     AttractionCandidate,
     CitySelectContext,
@@ -27,22 +28,26 @@ def retrieve_by_theme(
         raw_futures = {}
         for theme in themes:
             if preferred_city_ids or disliked_city_ids:
-                future = executor.submit(
-                    destination_search.search_candidates,
-                    query_vector,
-                    city_id=city_id,
-                    ddb_pk=ddb_pk,
-                    theme=theme,
-                    preferred_city_ids=preferred_city_ids,
-                    disliked_city_ids=disliked_city_ids,
+                future = submit_with_context(
+                    executor,
+                    lambda theme=theme: destination_search.search_candidates(
+                        query_vector,
+                        city_id=city_id,
+                        ddb_pk=ddb_pk,
+                        theme=theme,
+                        preferred_city_ids=preferred_city_ids,
+                        disliked_city_ids=disliked_city_ids,
+                    ),
                 )
             else:
-                future = executor.submit(
-                    destination_search.search_candidates,
-                    query_vector,
-                    city_id=city_id,
-                    ddb_pk=ddb_pk,
-                    theme=theme,
+                future = submit_with_context(
+                    executor,
+                    lambda theme=theme: destination_search.search_candidates(
+                        query_vector,
+                        city_id=city_id,
+                        ddb_pk=ddb_pk,
+                        theme=theme,
+                    ),
                 )
             raw_futures[future] = theme
         for future, theme in raw_futures.items():
@@ -163,9 +168,12 @@ def city_select_failure_state(result: CitySelectResult) -> dict[str, Any]:
 
 def embedding_query_text(context: CitySelectContext) -> str:
     query = context.candidate_input.cleaned_raw_query.strip()
-    if not query:
-        raise SchemaValidationError("cleaned_raw_query is required for city_select embedding")
-    return query
+    if query:
+        return query
+    theme_query = " ".join(context.theme_split.searchable_place_themes)
+    if theme_query:
+        return theme_query
+    raise SchemaValidationError("cleaned_raw_query is required for city_select embedding")
 
 
 __all__ = [

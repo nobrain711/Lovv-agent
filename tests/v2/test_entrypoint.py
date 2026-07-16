@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -79,6 +80,26 @@ def test_extract_resume_value() -> None:
     }
     assert extract_resume_value({"resumeValue": "ok"}) == "ok"
     assert extract_resume_value({"requestId": "REQ-1"}) is None
+    assert extract_resume_value({"body": json.dumps({"resumeValue": "ok"})}) == "ok"
+
+
+def test_extract_graph_payload_normalizes_public_theme_ids() -> None:
+    # Given: the public API sends canonical theme ids.
+    event = {
+        "entryType": "create",
+        "country": "KR",
+        "travelMonth": 7,
+        "tripType": "2d1n",
+        "activeRequiredThemes": ["sea_coast", "nature_trekking"],
+        "includeFestivals": False,
+        "sessionId": "session-theme",
+    }
+
+    # When: AgentCore normalizes the payload into graph state.
+    payload = extract_graph_payload(event, request_id="REQ-theme")
+
+    # Then: city_select/planner receive vector metadata theme labels.
+    assert payload["request"]["themes"] == ("바다·해안", "자연·트레킹")
 
 
 @patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
@@ -126,10 +147,9 @@ def test_handle_v2_invocation_plumbing(
     # 2. request_id가 sessionId 인지
     assert kwargs["request_id"] == "session-xyz"
     
-    # 3. graph_config가 적절한 thread_id와 actor_id를 들고 있는지
     graph_config = kwargs["graph_config"]
     assert graph_config["configurable"]["thread_id"] == "session-xyz"
-    assert graph_config["configurable"]["actor_id"] == "actor-abc"
+    assert graph_config["configurable"]["actor_id"] == "session-xyz"
     assert result == {"recommendationId": "REC-1"}
 
 
@@ -160,6 +180,46 @@ def test_handle_v2_invocation_uses_session_id_for_checkpoint_thread(
     kwargs = mock_harness_instance.invoke.call_args.kwargs
     assert kwargs["request_id"] == "per-invocation-request"
     assert kwargs["graph_config"]["configurable"]["thread_id"] == "stable-session"
+
+
+@patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
+@patch("lovv_agent_v2.agentcore_entrypoint._cached_profile_evidence_resolver")
+def test_handle_v2_invocation_reads_identity_from_wrapped_body(
+    mock_profile_resolver: MagicMock,
+    mock_cached_harness: MagicMock,
+) -> None:
+    mock_harness_instance = MagicMock()
+    mock_harness_instance.invoke.return_value = {
+        "response": {"response_payload": {"recommendationId": "REC-1"}},
+    }
+    mock_cached_harness.return_value = mock_harness_instance
+    fake_resolver = FakeProfileEvidenceResolver()
+    fake_resolver.calls.clear()
+    mock_profile_resolver.return_value = fake_resolver
+
+    handle_v2_invocation(
+        {
+            "body": json.dumps(
+                {
+                    "entryType": "create",
+                    "requestId": "req-wrapped",
+                    "sessionId": "session-wrapped",
+                    "actorId": "actor-wrapped",
+                    "country": "KR",
+                    "travelMonth": 10,
+                    "tripType": "2d1n",
+                    "themes": ["sea_coast"],
+                    "includeFestivals": False,
+                },
+            ),
+        },
+    )
+
+    kwargs = mock_harness_instance.invoke.call_args.kwargs
+    assert kwargs["request_id"] == "req-wrapped"
+    assert kwargs["graph_config"]["configurable"]["thread_id"] == "session-wrapped"
+    assert kwargs["graph_config"]["configurable"]["actor_id"] == "session-wrapped"
+    assert fake_resolver.calls[0][1:] == ("actor-wrapped", "session-wrapped")
 
 
 @patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
@@ -212,6 +272,92 @@ def test_handle_v2_invocation_sends_clarify_request_as_resume(
     assert payload.resume["entryType"] == "clarify"
     assert payload.resume["naturalLanguageQuery"] == "강릉 바다 당일 여행지를 추천해줘."
     assert result == {"recommendationId": "REC-CORRECTED"}
+
+
+@patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
+def test_handle_v2_invocation_sends_clarify_option_as_resume(
+    mock_cached_harness: MagicMock,
+) -> None:
+    mock_harness_instance = MagicMock()
+    mock_harness_instance.invoke.return_value = {
+        "response": {"response_payload": {"recommendationId": "REC-WEATHER-ALT"}},
+    }
+    mock_cached_harness.return_value = mock_harness_instance
+
+    result = handle_v2_invocation(
+        {
+            "entryType": "clarify",
+            "sessionId": "session-weather",
+            "threadId": "session-weather",
+            "actorId": "actor-weather",
+            "selectedOptionId": "use_weather_alternative",
+        },
+    )
+
+    payload = mock_harness_instance.invoke.call_args.args[0]
+    assert payload.resume == {"selectedOptionId": "use_weather_alternative"}
+    assert (
+        mock_harness_instance.invoke.call_args.kwargs["graph_config"]["configurable"][
+            "actor_id"
+        ]
+        == "session-weather"
+    )
+    assert result == {"recommendationId": "REC-WEATHER-ALT"}
+
+
+@patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
+def test_handle_v2_invocation_uses_session_checkpoint_actor_without_actor_id(
+    mock_cached_harness: MagicMock,
+) -> None:
+    mock_harness_instance = MagicMock()
+    mock_harness_instance.invoke.return_value = {
+        "response": {"response_payload": {"recommendationId": "REC-WEATHER-ALT"}},
+    }
+    mock_cached_harness.return_value = mock_harness_instance
+
+    handle_v2_invocation(
+        {
+            "entryType": "clarify",
+            "sessionId": "session-weather",
+            "threadId": "session-weather",
+            "selectedOptionId": "use_weather_alternative",
+        },
+    )
+
+    kwargs = mock_harness_instance.invoke.call_args.kwargs
+    assert kwargs["graph_config"]["configurable"] == {
+        "thread_id": "session-weather",
+        "actor_id": "session-weather",
+    }
+
+
+@patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")
+def test_handle_v2_invocation_sends_wrapped_clarify_option_as_resume(
+    mock_cached_harness: MagicMock,
+) -> None:
+    mock_harness_instance = MagicMock()
+    mock_harness_instance.invoke.return_value = {
+        "response": {"response_payload": {"recommendationId": "REC-WEATHER-ALT"}},
+    }
+    mock_cached_harness.return_value = mock_harness_instance
+
+    result = handle_v2_invocation(
+        {
+            "body": json.dumps(
+                {
+                    "entryType": "clarify",
+                    "sessionId": "session-weather",
+                    "threadId": "session-weather",
+                    "actorId": "actor-weather",
+                    "selectedOptionId": "use_weather_alternative",
+                },
+            ),
+        },
+    )
+
+    payload = mock_harness_instance.invoke.call_args.args[0]
+    assert payload.resume == {"selectedOptionId": "use_weather_alternative"}
+    assert result == {"recommendationId": "REC-WEATHER-ALT"}
 
 
 @patch("lovv_agent_v2.agentcore_entrypoint._cached_live_harness")

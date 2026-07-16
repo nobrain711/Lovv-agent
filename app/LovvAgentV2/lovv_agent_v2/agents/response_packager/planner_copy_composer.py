@@ -76,6 +76,7 @@ class PlannerCopyExplanation:
     itinerary_flow_reason: str
     explanation_audit: PlannerExplanationAudit
     used_llm: bool
+    applied_item_refs: tuple[str, ...]
 
 
 def compose_planner_copy_explanation(
@@ -87,8 +88,10 @@ def compose_planner_copy_explanation(
     fallback_recommendation_reasons: Sequence[str],
     fallback_itinerary_flow_reason: str,
     fallback_explanation_audit: PlannerExplanationAudit,
+    target_item_refs: Sequence[str] = (),
 ) -> PlannerCopyExplanation:
-    item_refs = tuple(_item_ref(index) for index, _ in enumerate(itinerary))
+    exact_item_ref_coverage = bool(target_item_refs)
+    item_refs = tuple(target_item_refs) or tuple(_item_ref(index) for index, _ in enumerate(itinerary))
     request = build_structured_converse_request(
         messages=[{"role": "user", "content": [{"text": json.dumps(safe_summary, ensure_ascii=False)}]}],
         system=[{"text": _prompt_text()}],
@@ -104,6 +107,7 @@ def compose_planner_copy_explanation(
         validator=lambda payload: validate_planner_copy_explanation_output(
             payload,
             allowed_item_refs=item_refs,
+            require_exact_item_refs=exact_item_ref_coverage,
         ),
     )
     if not result.ok:
@@ -116,6 +120,7 @@ def compose_planner_copy_explanation(
                 f"planner_copy_generation:schema_failure:{result.attempts}",
             ),
             used_llm=False,
+            applied_item_refs=(),
         )
     generated = result.value
     updated_itinerary = _apply_item_copies(itinerary, generated["item_copies"])
@@ -130,6 +135,7 @@ def compose_planner_copy_explanation(
             status=_summary_status(safe_summary),
         ),
         used_llm=True,
+        applied_item_refs=tuple(copy["item_ref"] for copy in generated["item_copies"]),
     )
 
 
@@ -137,6 +143,7 @@ def validate_planner_copy_explanation_output(
     payload: Mapping[str, Any],
     *,
     allowed_item_refs: Sequence[str],
+    require_exact_item_refs: bool = False,
 ) -> dict[str, Any]:
     if set(payload) != {"item_copies", "recommendation_reasons", "itinerary_flow_reason"}:
         raise SchemaValidationError("planner copy output contains unsupported fields")
@@ -145,6 +152,11 @@ def validate_planner_copy_explanation_output(
     if not isinstance(raw_item_copies, (list, tuple)):
         raise SchemaValidationError("item_copies must be a list")
     item_copies = tuple(_validate_item_copy(item, allowed_refs) for item in raw_item_copies)
+    item_refs = tuple(copy["item_ref"] for copy in item_copies)
+    if require_exact_item_refs and (
+        len(set(item_refs)) != len(item_refs) or set(item_refs) != allowed_refs
+    ):
+        raise SchemaValidationError("item_copies must cover each scoped item_ref exactly once")
     raw_reasons = payload["recommendation_reasons"]
     if not isinstance(raw_reasons, (list, tuple)) or not raw_reasons:
         raise SchemaValidationError("recommendation_reasons must be a non-empty list")

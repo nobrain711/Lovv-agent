@@ -10,9 +10,11 @@ from lovv_agent_v2.agents.intent.modify_parser import parse_modify_query
 from lovv_agent_v2.agents.intent.node import intent_node
 from lovv_agent_v2.agents.intent.parser import parse_initial_query
 from lovv_agent_v2.agents.intent.validator import validate_preference_sets
+from lovv_agent_v2.agents.city_select.retrieval.flow import embedding_query_text
 from lovv_agent_v2.core.runtime_state import invocation_runtime
 from lovv_agent_v2.core.state import UnifiedAgentState
 from lovv_agent_v2.models.schemas import SchemaValidationError
+from lovv_agent_v2.tools.city_select_contracts import prepare_city_select_context
 
 
 def test_parse_initial_query_extracts_preferred_theme_ids() -> None:
@@ -245,6 +247,7 @@ def test_intent_node_uses_prompt_runtime_before_code_parser() -> None:
     assert intent["clarifying_question"] is None
     assert intent["intent_extraction_mode"] == "prompt_structured_output"
     assert runtime.requests[0]["outputConfig"]["textFormat"]["type"] == "json_schema"
+    assert runtime.requests[0]["inferenceConfig"]["maxTokens"] == 2048
     assert "Lovv V2 Intent Agent" in runtime.requests[0]["system"][0]["text"]
 
 
@@ -290,6 +293,70 @@ def test_prompt_intent_projects_parsed_themes_when_request_themes_are_empty() ->
     assert output["intent"]["city_select_input"]["active_required_themes"] == [
         "온천·휴양",
     ]
+
+
+def test_prompt_intent_falls_back_to_request_query_when_cleaned_query_is_empty() -> None:
+    runtime = RecordingIntentRuntime(
+        {
+            "cleaned_raw_query": "",
+            "soft_preference_query": "연인과 함께 걷기 좋은 차분한 장소.",
+            "unsupported_conditions": [],
+            "congestion_pref": "neutral",
+            "transport_pref": "unknown",
+            "preferred_theme_ids": [],
+            "disliked_theme_ids": [],
+            "preferred_region_spans": [],
+            "disliked_region_spans": [],
+            "needs_clarification": False,
+            "clarifying_question": "",
+            "contradiction_reasons": [],
+        },
+    )
+
+    with invocation_runtime(
+        {
+            "intent_prompt_runtime": {
+                "runtime": runtime,
+                "schema_retry_limit": 0,
+            },
+        },
+    ):
+        output = intent_node(
+            {
+                "request": {
+                    "country": "KR",
+                    "travel_month": 7,
+                    "travel_year": 2026,
+                    "trip_type": "2d1n",
+                    "themes": ["바다·해안"],
+                    "include_festivals": False,
+                    "raw_query": "여자친구와 함께 가는 여행",
+                },
+            },
+        )
+
+    assert (
+        output["intent"]["city_select_input"]["cleaned_raw_query"]
+        == "여자친구와 함께 가는 여행"
+    )
+
+
+def test_city_select_embedding_query_falls_back_to_theme_labels() -> None:
+    context = prepare_city_select_context(
+        {
+            "country": "KR",
+            "travel_month": 7,
+            "travel_year": 2026,
+            "trip_type": "2d1n",
+            "active_required_themes": ["바다·해안", "자연·트레킹"],
+            "include_festivals": False,
+            "cleaned_raw_query": "",
+            "soft_preference_query": "",
+            "unsupported_conditions": [],
+        },
+    )
+
+    assert embedding_query_text(context) == "바다·해안 자연·트레킹"
 
 
 def test_intent_node_keeps_request_owned_fields_out_of_prompt_output() -> None:
@@ -461,6 +528,102 @@ def test_prompt_intent_reconciles_preference_contradictions() -> None:
     assert intent["clarification"]["options"][0]["then"] == "abort"
 
 
+def test_prompt_intent_keeps_disliked_city_out_of_preferred_regions() -> None:
+    runtime = RecordingIntentRuntime(
+        {
+            "cleaned_raw_query": "해변을 걷고 싶은데 강릉은 싫어.",
+            "soft_preference_query": "걷기 좋은 해변",
+            "unsupported_conditions": [],
+            "congestion_pref": "neutral",
+            "transport_pref": "walk",
+            "preferred_theme_ids": ["sea_coast"],
+            "disliked_theme_ids": [],
+            "preferred_region_spans": ["강릉"],
+            "disliked_region_spans": ["강릉"],
+            "needs_clarification": False,
+            "clarifying_question": "",
+            "contradiction_reasons": [],
+        },
+    )
+
+    with invocation_runtime(
+        {
+            "intent_prompt_runtime": {
+                "runtime": runtime,
+                "schema_retry_limit": 0,
+            },
+        },
+    ):
+        output = intent_node(
+            {
+                "request": {
+                    "entryType": "create",
+                    "country": "KR",
+                    "travelMonth": 8,
+                    "travelYear": 2026,
+                    "tripType": "daytrip",
+                    "themes": ["바다·해안"],
+                    "includeFestivals": False,
+                    "naturalLanguageQuery": "해변을 걷고 싶은데 강릉은 싫어.",
+                },
+            },
+        )
+
+    intent = output["intent"]
+    assert intent["preferred_region_ids"] == ()
+    assert intent["disliked_region_ids"] == ("KR-51-150",)
+    assert intent["needs_clarification"] is False
+    assert "clarification" not in intent
+
+
+def test_prompt_intent_uses_rule_parser_to_recover_theme_contradiction() -> None:
+    runtime = RecordingIntentRuntime(
+        {
+            "cleaned_raw_query": "바다는 좋 추천해줘",
+            "soft_preference_query": "",
+            "unsupported_conditions": [],
+            "congestion_pref": "neutral",
+            "transport_pref": "unknown",
+            "preferred_theme_ids": [],
+            "disliked_theme_ids": ["sea_coast"],
+            "preferred_region_spans": [],
+            "disliked_region_spans": [],
+            "needs_clarification": False,
+            "clarifying_question": "",
+            "contradiction_reasons": [],
+        },
+    )
+
+    with invocation_runtime(
+        {
+            "intent_prompt_runtime": {
+                "runtime": runtime,
+                "schema_retry_limit": 0,
+            },
+        },
+    ):
+        output = intent_node(
+            {
+                "request": {
+                    "country": "KR",
+                    "travel_month": 8,
+                    "travel_year": 2026,
+                    "trip_type": "daytrip",
+                    "themes": [],
+                    "include_festivals": False,
+                    "naturalLanguageQuery": "바다는 좋은데 바다는 빼고 추천해줘",
+                },
+            },
+        )
+
+    intent = output["intent"]
+    assert intent["preferred_theme_ids"] == ("sea_coast",)
+    assert intent["disliked_theme_ids"] == ("sea_coast",)
+    assert intent["needs_clarification"] is True
+    assert intent["contradiction_reasons"] == ("theme:sea_coast",)
+    assert intent["clarification"]["reason_code"] == "contradiction"
+
+
 def test_intent_node_clarifies_unsupported_country_request() -> None:
     output = intent_node(
         {
@@ -499,6 +662,14 @@ def test_intent_prompt_defines_soft_preference_hyde_examples() -> None:
     assert "still appear naturally in" in INTENT_PROMPT_TEXT
     assert "옛 정취가 흐르는" in INTENT_PROMPT_TEXT
     assert "no explicit mood/style phrase" in INTENT_PROMPT_TEXT
+
+
+def test_intent_prompt_defines_cleaned_raw_query_as_raw_minus_disliked_clauses() -> None:
+    assert "cleaned_raw_query must never be empty" in INTENT_PROMPT_TEXT
+    assert "with only\n  disliked or negative clauses removed" in INTENT_PROMPT_TEXT
+    assert "Do not summarize, shorten, rewrite" in INTENT_PROMPT_TEXT
+    assert "copy the rawQuery/naturalLanguageQuery" in INTENT_PROMPT_TEXT
+    assert "여자친구와 함께 가는 여행" in INTENT_PROMPT_TEXT
 
 
 def test_intent_prompt_defines_preference_id_rules_and_enums() -> None:

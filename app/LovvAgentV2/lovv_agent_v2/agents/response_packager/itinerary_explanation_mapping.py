@@ -122,9 +122,14 @@ def _with_enriched_details(
 
 def _item_prompt_summary(index: int, item: Mapping[str, Any]) -> dict[str, Any]:
     details = item.get("details")
-    overview = None
+    description = None
     if isinstance(details, Mapping):
-        overview = details.get("overview") or details.get("overview_ko")
+        description = (
+            details.get("description")
+            or details.get("description_ko")
+            or details.get("overview")
+            or details.get("overview_ko")
+        )
     return {
         "item_ref": f"item:{index}",
         "item_type": item.get("item_type"),
@@ -135,7 +140,7 @@ def _item_prompt_summary(index: int, item: Mapping[str, Any]) -> dict[str, Any]:
         "city_name_ko": item.get("city_name_ko"),
         "theme_tags": list(_string_tuple(item.get("theme_tags"))),
         "source": item.get("source"),
-        "overview": overview,
+        "description": description,
         "date_status": item.get("date_status"),
         "start_date": item.get("start_date"),
         "end_date": item.get("end_date"),

@@ -11,12 +11,6 @@ from typing import Any
 
 from langgraph.types import Command
 
-from lovv_agent_v2.tools.agentcore_credentials import resolve_agentcore_api_key
-from lovv_agent_v2.tools.ors_provider import (
-    OrsProviderUnavailableError,
-    ors_provider_from_env,
-)
-from lovv_agent_v2.tools.travel_time_provider import HaversineTravelTimeProvider
 from lovv_agent_v2.tools.destination_search import DestinationSearchTool
 from lovv_agent_v2.tools.runtime_containers import (
     CitySelectScoringTools,
@@ -25,6 +19,11 @@ from lovv_agent_v2.tools.runtime_containers import (
     IntentPromptRuntime,
     ItineraryExplanationRuntime,
     PlannerRuntimeTools,
+)
+from lovv_agent_v2.common.telemetry import trace_invocation
+from lovv_agent_v2.harness_runtime import (
+    build_live_travel_time_provider,
+    memory_event_runtime,
 )
 from lovv_agent_v2.infra.adapters.embeddings import BedrockEmbeddingAdapter
 from lovv_agent_v2.infra.adapters.bedrock_converse import create_bedrock_converse_runtime
@@ -41,6 +40,10 @@ from lovv_agent_v2.infra.repositories.dynamodb import DynamoDbRepository
 from lovv_agent_v2.infra.repositories.s3_vectors import S3VectorRepository
 from lovv_agent_v2.core.graph import compile_v2_graph
 from lovv_agent_v2.core.runtime_state import invocation_runtime
+from lovv_agent_v2.core.trace_context import (
+    trace_context_from_graph_config,
+    with_trace_context,
+)
 from lovv_agent_v2.models.schemas import SchemaValidationError
 
 
@@ -85,11 +88,25 @@ class LovvLangGraphV2Harness:
                 _itinerary_explanation_runtime_payload(payload)
                 or self.itinerary_explanation_runtime
             )
+            graph_payload = _payload_with_trace(
+                graph_payload,
+                request_id=request_id,
+                graph_config=config,
+            )
         with invocation_runtime(runtime, itinerary_runtime):
-            return self.graph.invoke(graph_payload, config=config)
-
-    def _payload_with_runtime(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return _checkpoint_payload(payload)
+            if isinstance(graph_payload, dict):
+                return trace_invocation(
+                    graph_payload,
+                    lambda: self.graph.invoke(graph_payload, config=config),
+                )
+            return trace_invocation(
+                _payload_with_trace(
+                    {"request": {"request_id": request_id or "resume"}},
+                    request_id=request_id,
+                    graph_config=config,
+                ),
+                lambda: self.graph.invoke(graph_payload, config=config),
+            )
 
 
 def build_v2_harness(
@@ -131,6 +148,22 @@ def _checkpoint_payload(payload: dict[str, Any]) -> dict[str, Any]:
         for key, value in payload.items()
         if key not in {"runtime", "itinerary_explanation_runtime"}
     }
+
+
+def _payload_with_trace(
+    payload: dict[str, Any],
+    *,
+    request_id: str | None,
+    graph_config: dict[str, Any],
+) -> dict[str, Any]:
+    return with_trace_context(
+        payload,
+        trace_context_from_graph_config(
+            payload,
+            request_id=request_id,
+            graph_config=graph_config,
+        ),
+    )
 
 
 def _runtime_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -181,6 +214,7 @@ def _build_live_graph_runtime(config: RuntimeConfig) -> dict[str, Any]:
         bedrock_runtime_client=runtime_clients.bedrock_runtime,
     )
     return {
+        "interrupts_enabled": True,
         "city_select_tools": city_select_tools,
         "city_select_scoring_tools": CitySelectScoringTools(
             dynamo_lookup=dynamo_lookup,
@@ -193,8 +227,9 @@ def _build_live_graph_runtime(config: RuntimeConfig) -> dict[str, Any]:
             bedrock_runtime_client=runtime_clients.bedrock_runtime,
         ),
         "planner_runtime": planner_runtime,
-        "travel_time_provider": _build_live_travel_time_provider(client_provider),
+        "travel_time_provider": build_live_travel_time_provider(client_provider),
         "itinerary_explanation_runtime": itinerary_runtime,
+        **memory_event_runtime(config, client_provider),
     }
 
 
@@ -244,18 +279,6 @@ def _required_embedding_model_id(model_id: str | None) -> str:
     if model_id is None:
         raise SchemaValidationError("LOVV_EMBEDDING_MODEL_ID is required for live V2 harness")
     return model_id
-
-
-def _build_live_travel_time_provider(client_provider: Any) -> Any:
-    try:
-        provider = ors_provider_from_env(
-            api_key_resolver=lambda: resolve_agentcore_api_key(
-                client=client_provider.create_agentcore_identity_client(),
-            ),
-        )
-    except OrsProviderUnavailableError:
-        provider = None
-    return provider or HaversineTravelTimeProvider()
 
 
 __all__ = ["LovvLangGraphV2Harness", "build_v2_harness", "build_live_harness"]

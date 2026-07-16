@@ -19,4 +19,12 @@ def sanitize_text(value: str) -> str:
     return _PHONE_RE.sub("[REDACTED_PHONE]", redacted)
 
 
-__all__ = ["sanitize_text"]
+def sanitized_exception_attributes(exc: Exception) -> dict[str, str | bool]:
+    return {
+        "exception.type": type(exc).__name__,
+        "exception.message": sanitize_text(str(exc) or type(exc).__name__),
+        "exception.escaped": True,
+    }
+
+
+__all__ = ["sanitize_text", "sanitized_exception_attributes"]

@@ -26,6 +26,7 @@ def build_itinerary_item_payload(
         ),
         "cityId": item.get("cityId") or item.get("city_id"),
         "theme": item.get("theme") or _first_theme(item.get("theme_tags")),
+        "sourceType": _source_type(item),
         "moveMinutes": _optional_number(item, "moveMinutes", "move_minutes"),
         "latitude": _optional_number(item, "latitude", "lat"),
         "longitude": _optional_number(item, "longitude", "lng", "lon"),
@@ -41,6 +42,20 @@ def _first_theme(value: Any) -> str | None:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)) and value:
         first = value[0]
         return first if isinstance(first, str) else None
+    return None
+
+
+def _source_type(item: Mapping[str, Any]) -> str | None:
+    details = item.get("details")
+    if isinstance(details, Mapping):
+        for field_name in ("sourceType", "source_type", "source", "provenance"):
+            value = details.get(field_name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    for field_name in ("sourceType", "source_type", "source"):
+        value = item.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
     return None
 
 

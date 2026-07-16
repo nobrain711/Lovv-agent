@@ -14,6 +14,16 @@ def test_rule_parser_resolves_city_change_from_identity_map() -> None:
                 "rawModifyQuery": "도시는 군산으로 바꿔줘.",
                 "currentOrder": [_current_item()],
             },
+            "intent": {
+                "city_select_input": {
+                    "country": "KR",
+                    "travel_month": 9,
+                    "trip_type": "2d1n",
+                    "active_required_themes": ("역사·전통",),
+                    "include_festivals": False,
+                    "cleaned_raw_query": "역사 여행",
+                },
+            },
         },
     )
 

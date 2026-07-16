@@ -9,6 +9,7 @@ initializing AWS clients at import time.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -17,6 +18,7 @@ from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from lovv_agent_v2.common.telemetry import context_window_for_model, record_llm_usage, sanitize_text
+from lovv_agent_v2.common.telemetry_metrics import record_tool_call
 
 ADAPTER_NAME = "BedrockConverseAdapter"
 
@@ -69,6 +71,7 @@ class BedrockConverseRuntime:
         payload = dict(request)
         # 테스트에서 명시한 modelId는 존중하고, live 호출은 설정값을 기본으로 쓴다.
         payload.setdefault("modelId", model_id)
+        started_at = time.perf_counter()
         with _TRACER.start_as_current_span("BedrockConverse") as span:
             span.set_attribute("llm.model_id", model_id)
             span.set_attribute("llm.context_window", context_window_for_model(model_id))
@@ -89,6 +92,8 @@ class BedrockConverseRuntime:
                     Status(StatusCode.ERROR, sanitize_text(str(exc) or type(exc).__name__)),
                 )
                 raise
+            finally:
+                record_tool_call("bedrock", "Converse", _duration_ms(started_at))
 
 
 def create_bedrock_converse_runtime(
@@ -332,6 +337,10 @@ def _usage_int(usage: Mapping[str, Any], field_name: str) -> int:
     if isinstance(value, float):
         return int(value)
     return 0
+
+
+def _duration_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
 
 
 __all__ = [

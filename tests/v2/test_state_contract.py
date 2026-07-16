@@ -110,9 +110,6 @@ def test_planner_subgraph_implementation_files_are_grouped_by_step() -> None:
         "domain/place_model.py",
         "state/context.py",
         "state/scratch.py",
-        "external/travel_time.py",
-        "external/ors_provider.py",
-        "external/agentcore_credentials.py",
     )
     legacy_root_files = (
         "node.py",

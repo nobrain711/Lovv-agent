@@ -10,6 +10,7 @@ from lovv_agent_v2.agents.planner.steps.route_days.place_selection import (
     build_working_set,
 )
 from lovv_agent_v2.agents.planner.steps.route_days.routing import route_days
+from lovv_agent_v2.common.telemetry_threading import submit_with_context
 from lovv_agent_v2.tools.runtime_containers import PlannerRuntimeTools
 from lovv_agent_v2.tools.travel_time_provider import TravelTimeProvider
 from lovv_agent_v2.models.schemas import SchemaValidationError
@@ -152,8 +153,8 @@ def _retrieve_raw_and_soft(
     runtime: PlannerRuntimeTools,
 ) -> tuple[tuple[Mapping[str, object], ...], tuple[Mapping[str, object], ...]]:
     with ThreadPoolExecutor(max_workers=2) as executor:
-        raw_future = executor.submit(_raw_channel, request, runtime)
-        soft_future = executor.submit(_soft_channel, request, runtime)
+        raw_future = submit_with_context(executor, lambda: _raw_channel(request, runtime))
+        soft_future = submit_with_context(executor, lambda: _soft_channel(request, runtime))
         return raw_future.result(), soft_future.result()
 
 

@@ -10,6 +10,8 @@ from langgraph.types import interrupt
 from lovv_agent_v2.agents.response_packager.agent import ResponsePackagerAgent
 from lovv_agent_v2.agents.response_packager.clarification_resume import response_resume_update
 from lovv_agent_v2.agents.response_packager.contracts import ResponsePackagerInput
+from lovv_agent_v2.common.telemetry_lifecycle import emit_clarification_waiting
+from lovv_agent_v2.core.runtime_state import runtime_value
 from lovv_agent_v2.core.state import UnifiedAgentState
 from lovv_agent_v2.models.clarification_texts import (
     clarification_helper_text,
@@ -31,6 +33,9 @@ def response_packager_node(state: UnifiedAgentState) -> dict[str, Any]:
     """Format and pack output response. Triggers checkpointer interrupt."""
     output = ResponsePackagerAgent().run(_response_packager_input(state))
     if output.response.get("response_status") == "END_WAIT_USER":
+        emit_clarification_waiting(state, output.response)
+        if runtime_value(state, "interrupts_enabled") is False:
+            return {"response": output.response}
         resume_value = interrupt(output.response["response_payload"])
         return response_resume_update(state, output.response, resume_value)
     return {"response": output.response}
@@ -296,16 +301,19 @@ def _modify_clarification_payload(clarification: Mapping[str, Any]) -> dict[str,
     options = payload.get("options")
     if isinstance(options, list) and options:
         return payload
+    reason_code = str(payload.get("reason_code", "modify_seed_theme_conflict"))
+    if reason_code == "modify_target_unresolved":
+        return _target_unresolved_clarification(payload, reason_code)
     payload["options"] = [
         {
             "option_id": "revise_modify_query",
             "label": _label_text(
-                str(payload.get("reason_code", "modify_seed_theme_conflict")),
+                reason_code,
                 "revise_modify_query",
                 "수정 요청 다시 입력",
             ),
             "helper_text": _helper_text(
-                str(payload.get("reason_code", "modify_seed_theme_conflict")),
+                reason_code,
                 "revise_modify_query",
                 "수정할 일자나 순서를 포함해 다시 요청합니다.",
             ),

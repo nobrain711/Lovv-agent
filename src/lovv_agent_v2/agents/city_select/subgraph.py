@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from langgraph.graph import StateGraph
+from lovv_agent_v2.common.telemetry import trace_node
 from lovv_agent_v2.core.state import UnifiedAgentState
 from lovv_agent_v2.agents.city_select.nodes import (
     retrieval_node,
@@ -18,8 +19,11 @@ def compile_city_select_subgraph(checkpointer: Any | None = None) -> Any:
     builder = StateGraph(UnifiedAgentState)
 
     # 1. 노드 등록
-    builder.add_node("retrieval", retrieval_node)
-    builder.add_node("scoring_and_selection", scoring_and_selection_node)
+    builder.add_node("retrieval", trace_node("city_select.retrieval", retrieval_node))
+    builder.add_node(
+        "scoring_and_selection",
+        trace_node("city_select.scoring_and_selection", scoring_and_selection_node),
+    )
 
     # 2. 엣지 연결 (retrieval -> scoring_and_selection)
     builder.set_entry_point("retrieval")

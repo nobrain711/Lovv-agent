@@ -4,6 +4,7 @@ import sys
 from types import ModuleType
 
 import pytest
+from langgraph.checkpoint.memory import MemorySaver
 
 from lovv_agent_v2.infra.config import MemorySettings
 from lovv_agent_v2.infra.memory.checkpointer import build_checkpointer
@@ -14,6 +15,20 @@ class FakeAgentCoreMemorySaver:
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         self.calls.append((args, kwargs))
+
+
+def test_build_checkpointer_uses_memory_saver_when_memory_is_disabled() -> None:
+    saver = build_checkpointer(MemorySettings(enabled=False))
+
+    assert isinstance(saver, MemorySaver)
+
+
+def test_build_checkpointer_emits_local_memory_guard(capsys: pytest.CaptureFixture[str]) -> None:
+    build_checkpointer(MemorySettings(enabled=False))
+
+    output = capsys.readouterr().out
+    assert '"logType":"AGENT_MEMORY_GUARD"' in output
+    assert '"memoryMode":"local_memory_saver"' in output
 
 
 def test_build_checkpointer_requires_agentcore_saver_package_when_memory_is_enabled(

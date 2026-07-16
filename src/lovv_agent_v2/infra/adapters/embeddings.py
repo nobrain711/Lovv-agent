@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+import time
 from typing import Any, Protocol
+
+from lovv_agent_v2.common.telemetry_metrics import record_tool_call
 
 ADAPTER_NAME = "EmbeddingAdapter"
 
@@ -55,10 +58,14 @@ class BedrockEmbeddingAdapter:
             "dimensions": dimensions,
             "normalize": bool(self.normalize),
         }
-        response = self.client.invoke_model(
-            modelId=model_id,
-            body=json.dumps(payload).encode("utf-8"),
-        )
+        started_at = time.perf_counter()
+        try:
+            response = self.client.invoke_model(
+                modelId=model_id,
+                body=json.dumps(payload).encode("utf-8"),
+            )
+        finally:
+            record_tool_call("bedrock", "InvokeModel", _duration_ms(started_at))
         embedding = _extract_embedding(response)
         if len(embedding) != dimensions:
             raise EmbeddingAdapterError(
@@ -112,6 +119,10 @@ def _positive_int(value: int, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise EmbeddingAdapterError(f"{field_name} must be a positive integer")
     return value
+
+
+def _duration_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
 
 
 __all__ = [

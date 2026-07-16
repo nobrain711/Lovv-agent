@@ -3,11 +3,13 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
+from lovv_agent_v2.common.telemetry_metrics import record_tool_call
 from lovv_agent_v2.tools.agentcore_credentials import resolve_agentcore_api_key
 from lovv_agent_v2.tools.ors_results import durations_minutes, snapped_payloads
 from lovv_agent_v2.tools.travel_time_provider import (
@@ -37,6 +39,7 @@ class OrsTravelTimeProvider:
     _module: ModuleType | None = None
     _snapped_places: dict[str, object] | None = None
     _snap_payloads: dict[str, Mapping[str, object]] | None = None
+    _fallback_provider: HaversineTravelTimeProvider | None = None
 
     @classmethod
     def from_default(cls) -> OrsTravelTimeProvider:
@@ -51,11 +54,13 @@ class OrsTravelTimeProvider:
         fallback = HaversineTravelTimeProvider()
         if not candidates or not self._has_api_key():
             snap = fallback.snap_places(places, transport_pref)
+            self._fallback_provider = fallback
             self._snap_payloads = {place_id: payload for place_id, payload in payload_by_id.items()}
             self._snapped_places = {place_id: candidate for place_id, candidate in candidates.items()}
             return _snap_with_audit(snap, "ors_external_haversine_presnap", missing_ids)
         module = self._ors_module()
         client = self._client(module)
+        start = time.perf_counter()
         try:
             result = client.snap_places(
                 list(candidates.values()),
@@ -63,11 +68,19 @@ class OrsTravelTimeProvider:
                 radius_m=self.config.snap_radius_m,
             )
         except (ImportError, OSError, RuntimeError, ValueError):
+            record_tool_call("ors", "SnapPlaces", _duration_ms(start))
             snap = fallback.snap_places(places, transport_pref)
+            self._fallback_provider = fallback
             self._snap_payloads = {place_id: payload for place_id, payload in payload_by_id.items()}
             self._snapped_places = {place_id: candidate for place_id, candidate in candidates.items()}
             return _snap_with_audit(snap, "ors_external_snap_failure_fallback", missing_ids)
+        record_tool_call("ors", "SnapPlaces", _duration_ms(start))
         snapped = snapped_payloads(payload_by_id, result)
+        if result.fallback_used:
+            fallback.snap_places(tuple(snapped.values()), transport_pref)
+            self._fallback_provider = fallback
+        else:
+            self._fallback_provider = None
         self._snap_payloads = snapped
         self._snapped_places = {
             place_id: place
@@ -91,18 +104,25 @@ class OrsTravelTimeProvider:
         place_ids: tuple[str, ...],
         transport_pref: str,
     ) -> MatrixResponse:
+        if self._fallback_provider is not None:
+            matrix = self._fallback_provider.matrix_minutes(place_ids, transport_pref)
+            audit = dict(matrix.audit)
+            audit.update(matrix_provider="ors_external", fallback_used="ors_haversine", ors_source="ors_haversine")
+            return MatrixResponse(durations=matrix.durations, audit=audit)
         snapped_places = self._snapped_places or {}
         matrix_places = [snapped_places[place_id] for place_id in place_ids if place_id in snapped_places]
         if not matrix_places:
             return MatrixResponse(durations={}, audit={"matrix_provider": "ors_external_empty"})
         module = self._ors_module()
         client = self._client(module)
+        start = time.perf_counter()
         result = client.get_matrix(
             matrix_places,
             profile=_profile(transport_pref),
             use_cache=True,
             allow_fallback=self.config.allow_fallback,
         )
+        record_tool_call("ors", "GetMatrix", _duration_ms(start))
         return MatrixResponse(
             durations=durations_minutes(result),
             audit={
@@ -212,6 +232,10 @@ def _cache_dir() -> Path | None:
 
 def _profile(transport_pref: str) -> str:
     return "foot-walking" if transport_pref == "walk" else "driving-car"
+
+
+def _duration_ms(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)
 
 
 def _snap_with_audit(

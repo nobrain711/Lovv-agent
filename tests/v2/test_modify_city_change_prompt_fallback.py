@@ -35,6 +35,7 @@ def test_intent_node_prefers_rule_city_change_over_prompt_clarification() -> Non
                 "trip_type": "3d2n",
                 "active_required_themes": ("자연·트레킹", "바다·해안"),
                 "include_festivals": False,
+                "cleaned_raw_query": "자연과 바다 여행",
             },
         },
     }

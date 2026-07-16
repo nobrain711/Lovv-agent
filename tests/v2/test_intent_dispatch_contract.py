@@ -241,6 +241,26 @@ def test_intent_node_builds_slot_replace_modify_intent() -> None:
     }
 
 
+def test_intent_node_asks_for_generation_when_modify_has_no_existing_itinerary() -> None:
+    output = intent_node(
+        {
+            "request": {
+                "entryType": "modify",
+                "threadId": "thread-missing",
+                "itineraryRevision": "rev-001",
+                "destinationId": "KR-51-170",
+                "rawModifyQuery": "1일차 두 번째 장소 바꿔줘.",
+            },
+        },
+    )
+
+    modify_intent = output["intent"]["modify_intent"]
+    assert modify_intent["status"] == "needs_clarification"
+    assert modify_intent["kind"] == "unsupported"
+    assert modify_intent["reason_code"] == "modify_missing_current_itinerary"
+    assert modify_intent["routing_hint"] == "response_packager_wait_user"
+
+
 def test_intent_node_builds_city_change_modify_intent() -> None:
     output = intent_node(
         {
@@ -260,6 +280,16 @@ def test_intent_node_builds_city_change_modify_intent() -> None:
                         "cityId": "KR-51-150",
                     },
                 ],
+            },
+            "intent": {
+                "city_select_input": {
+                    "country": "KR",
+                    "travel_month": 10,
+                    "trip_type": "2d1n",
+                    "active_required_themes": ("역사·전통",),
+                    "include_festivals": False,
+                    "cleaned_raw_query": "역사 여행",
+                },
             },
         },
     )

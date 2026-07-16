@@ -59,12 +59,28 @@ def explain_planner_output(explanation_input: ItineraryExplanationInput) -> Plan
             validation_result=planner_output.validation_result,
         ),
     )
+    target_refs = _target_item_refs(itinerary, planner_output.validation_result)
+    has_target_scope = bool(
+        _text_tuple(planner_output.validation_result.get("explanation_item_place_ids")),
+    )
+    if has_target_scope:
+        safe_summary = {
+            **safe_summary,
+            "copy_target_item_refs": list(target_refs),
+            "copy_scope": "changed_items_only",
+        }
     audit = fallback_audit(itinerary)
     validation_result = _validation_result(
         planner_output,
         itinerary=itinerary,
         detail_warnings=detail_warnings,
     )
+    if has_target_scope:
+        validation_result["modification_explanation_attempted"] = True
+        validation_result["modification_explanation_completed"] = False
+    if has_target_scope and not target_refs:
+        skipped_audit = _audit_with_note(audit, "planner_copy_generation:skipped:target_not_found")
+        return _replace_planner_output(planner_output, itinerary, validation_result, skipped_audit)
     if runtime.explanation_runtime is None:
         skipped_audit = _audit_with_note(audit, "planner_copy_generation:skipped:no_runtime")
         return _replace_planner_output(planner_output, itinerary, validation_result, skipped_audit)
@@ -77,8 +93,20 @@ def explain_planner_output(explanation_input: ItineraryExplanationInput) -> Plan
         fallback_recommendation_reasons=planner_output.recommendation_reasons,
         fallback_itinerary_flow_reason=planner_output.itinerary_flow_reason,
         fallback_explanation_audit=audit,
+        target_item_refs=target_refs,
     )
     validation_result["planner_copy_generation_used_llm"] = composed.used_llm
+    if has_target_scope:
+        expected_refs = set(target_refs)
+        copied_refs = {
+            f"item:{index}"
+            for index, item in enumerate(composed.itinerary)
+            if f"item:{index}" in expected_refs
+            and item.get("copy_source") == "llm_planner_copy"
+        }
+        validation_result["modification_explanation_completed"] = (
+            expected_refs == set(composed.applied_item_refs) == copied_refs
+        )
     return PlannerOutput(
         itinerary=composed.itinerary,
         recommendation_reasons=composed.recommendation_reasons,
@@ -106,8 +134,35 @@ def _validation_result(
     if detail_warnings:
         validation["detail_enrichment_warnings"] = tuple(dict(warning) for warning in detail_warnings)
     if itinerary:
-        validation["itinerary_explanation_item_count"] = len(itinerary)
+        target_refs = _target_item_refs(itinerary, validation)
+        validation["itinerary_explanation_item_count"] = len(target_refs) if target_refs else len(itinerary)
     return validation
+
+
+def _target_item_refs(
+    itinerary: Sequence[Mapping[str, Any]],
+    validation_result: Mapping[str, Any],
+) -> tuple[str, ...]:
+    place_ids = _text_tuple(validation_result.get("explanation_item_place_ids"))
+    if not place_ids:
+        return ()
+    target_ids = set(place_ids)
+    return tuple(
+        f"item:{index}"
+        for index, item in enumerate(itinerary)
+        if _place_id(item) in target_ids
+    )
+
+
+def _text_tuple(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+
+
+def _place_id(item: Mapping[str, Any]) -> str | None:
+    value = item.get("placeId", item.get("place_id"))
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _audit_with_note(audit: PlannerExplanationAudit, note: str) -> PlannerExplanationAudit:

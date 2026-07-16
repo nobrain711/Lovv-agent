@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
@@ -9,11 +11,19 @@ from typing import Any
 from langgraph.types import Command
 
 from lovv_agent_v2.agentcore_io import decode_json_if_needed as _decode_json_if_needed
-from lovv_agent_v2.agentcore_io import extract_resume_value, extract_thread_id, interrupt_response
+from lovv_agent_v2.agentcore_io import (
+    extract_actor_id,
+    extract_request_id,
+    extract_resume_value,
+    extract_thread_id,
+    interrupt_response,
+)
 from lovv_agent_v2.agents.profile.evidence import (
     InMemoryProfileEvidenceCache,
     ProfileEvidenceResolver,
 )
+from lovv_agent_v2.agents.intent.parser import THEME_ID_TO_LABEL
+from lovv_agent_v2.core.trace_context import TraceContext, with_trace_context
 from lovv_agent_v2.harness import LovvLangGraphV2Harness, build_live_harness
 
 
@@ -27,6 +37,7 @@ _REQUEST_FIELD_MARKERS = frozenset(
         "includeFestivals",
     },
 )
+_LOGGER = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -50,6 +61,7 @@ def handle_v2_invocation(event: Any, context: Any | None = None) -> dict[str, An
     request_id = extract_request_id(event)
     thread_id = extract_thread_id(event, fallback=request_id)
     actor_id = extract_actor_id(event) or thread_id
+    checkpoint_actor_id = thread_id
     resume_value = extract_resume_value(event)
     clarify_resume = _clarify_resume_value(event) if resume_value is None else None
     payload = (
@@ -57,6 +69,15 @@ def handle_v2_invocation(event: Any, context: Any | None = None) -> dict[str, An
         if resume_value is not None or clarify_resume is not None
         else extract_graph_payload(event, request_id=request_id)
     )
+    if isinstance(payload, dict):
+        payload = with_trace_context(
+            payload,
+            TraceContext(
+                request_id=request_id,
+                thread_id=thread_id,
+                actor_id=actor_id,
+            ),
+        )
     if resume_value is None and clarify_resume is None:
         payload = _payload_with_profile_evidence(
             payload,
@@ -68,9 +89,21 @@ def handle_v2_invocation(event: Any, context: Any | None = None) -> dict[str, An
     graph_config = {
         "configurable": {
             "thread_id": thread_id,
-            "actor_id": actor_id,
+            "actor_id": checkpoint_actor_id,
         }
     }
+    _emit_entrypoint_route(
+        {
+            "logType": "AGENT_ENTRYPOINT_ROUTE",
+            "requestId": request_id,
+            "threadId": thread_id,
+            "actorId": actor_id,
+            "checkpointActorId": checkpoint_actor_id,
+            "payloadKind": "resume" if isinstance(payload, Command) else "state",
+            "hasResumeValue": resume_value is not None,
+            "hasClarifyResume": clarify_resume is not None,
+        },
+    )
     result = _cached_live_harness().invoke(
         payload,
         request_id=request_id,
@@ -114,9 +147,35 @@ def _payload_with_profile_evidence(
 
 def _clarify_resume_value(event: Any) -> dict[str, Any] | None:
     decoded = _decode_json_if_needed(event)
-    if not isinstance(decoded, Mapping) or _entry_type(decoded) != "clarify":
+    if not isinstance(decoded, Mapping):
         return None
-    return extract_recommendation_payload(decoded)
+    for payload in _clarify_payload_candidates(decoded):
+        option_resume = _clarify_option_resume(payload)
+        if option_resume is not None:
+            return option_resume
+        return extract_recommendation_payload(payload)
+    return None
+
+
+def _clarify_payload_candidates(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    candidates = [payload]
+    for key in ("payload", "input", "request", "body", "prompt"):
+        if key not in payload:
+            continue
+        nested = _decode_json_if_needed(payload[key])
+        if isinstance(nested, Mapping):
+            candidates.append(nested)
+    return tuple(candidate for candidate in candidates if _entry_type(candidate) == "clarify")
+
+
+def _clarify_option_resume(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    selected_option = _text_or_none(
+        payload.get("selectedOptionId", payload.get("selected_option_id")),
+    )
+    if selected_option is not None:
+        return {"selectedOptionId": selected_option}
+    option_id = _text_or_none(payload.get("optionId", payload.get("option_id")))
+    return {"optionId": option_id} if option_id is not None else None
 
 
 def extract_graph_payload(event: Any, *, request_id: str | None = None) -> dict[str, Any]:
@@ -162,38 +221,6 @@ def extract_recommendation_payload(event: Any) -> dict[str, Any]:
     raise ValueError(
         "AgentCore invocation must contain a /recommendations request payload",
     )
-
-
-def extract_request_id(event: Any) -> str | None:
-    """Read an optional request id from common AgentCore/HTTP wrappers."""
-
-    decoded = _decode_json_if_needed(event)
-    if not isinstance(decoded, Mapping):
-        return None
-    for key in ("requestId", "request_id", "invocationId", "sessionId"):
-        value = decoded.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    headers = decoded.get("headers")
-    if isinstance(headers, Mapping):
-        for key in ("x-request-id", "X-Request-Id", "x-amzn-trace-id"):
-            value = headers.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    return None
-
-
-def extract_actor_id(event: Any) -> str | None:
-    """Extract an optional pseudonymized actor_id from event."""
-
-    decoded = _decode_json_if_needed(event)
-    if not isinstance(decoded, Mapping):
-        return None
-    for key in ("actorId", "actor_id", "userId"):
-        value = decoded.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
 
 
 def _looks_like_recommendation_request(payload: Mapping[str, Any]) -> bool:
@@ -245,6 +272,9 @@ def _request_from_recommendation_request(
     *,
     request_id: str,
 ) -> dict[str, Any]:
+    themes = _normalize_theme_values(
+        request.get("activeRequiredThemes", request.get("themes", ())),
+    )
     return {
         "request_id": request_id,
         "country": request["country"],
@@ -253,7 +283,7 @@ def _request_from_recommendation_request(
         "trip_type": request["tripType"],
         "destination_id": request.get("destinationId"),
         "include_festivals": request["includeFestivals"],
-        "themes": tuple(request.get("activeRequiredThemes", request.get("themes", ()))),
+        "themes": themes,
         "raw_query": request.get("rawQuery", request.get("naturalLanguageQuery", "")),
         "user_location": request.get("userLocation"),
     }
@@ -266,6 +296,11 @@ def _followup_request(
 ) -> dict[str, Any]:
     normalized = dict(request)
     normalized["request_id"] = request_id
+    thread_id = _text_or_none(
+        request.get("threadId", request.get("thread_id", request.get("sessionId"))),
+    )
+    if thread_id is not None:
+        normalized.setdefault("thread_id", thread_id)
     return normalized
 
 
@@ -284,6 +319,23 @@ def _has_theme_selection(payload: Mapping[str, Any]) -> bool:
     if not isinstance(value, (list, tuple)):
         return False
     return any(isinstance(item, str) and item.strip() for item in value)
+
+
+def _normalize_theme_values(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return (_theme_label(value),) if value.strip() else ()
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(_theme_label(item) for item in value if isinstance(item, str) and item.strip())
+
+
+def _theme_label(value: str) -> str:
+    normalized = value.strip()
+    return THEME_ID_TO_LABEL.get(normalized, normalized)
+
+
+def _emit_entrypoint_route(entry: Mapping[str, Any]) -> None:
+    _LOGGER.warning(json.dumps(dict(entry), ensure_ascii=False, separators=(",", ":")))
 
 
 def _entry_type(payload: Mapping[str, Any]) -> str:
