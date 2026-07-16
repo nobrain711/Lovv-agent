@@ -3,18 +3,20 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from lovv_agent_v2.agents.intent.modify_city_change import (
+    build_city_change,
+    city_change_routing_hint,
+)
+from lovv_agent_v2.agents.intent.modify_current_order import (
+    current_order,
+    current_order_for_city,
+)
 from lovv_agent_v2.agents.intent.parser import IntentPreferenceResult, parse_initial_query
 from lovv_agent_v2.agents.intent.modify_day_regenerate import day_regenerate_request
 from lovv_agent_v2.agents.intent.modify_slots import (
-    avoid_city_ids,
-    current_order,
     public_operation,
     slot_replace_operations,
 )
-from lovv_agent_v2.models.city_identity import (
-    load_default_city_identity_map,
-)
-from lovv_agent_v2.models.city_identity_text import find_city_identity_in_text
 
 
 def parse_modify_query(raw_query: str) -> IntentPreferenceResult:
@@ -44,7 +46,7 @@ def build_modify_intent(
             "audit": {"parser": "rule_v2"},
         }
     current_order_items = current_order(request, state)
-    city_change = _city_change(raw_query, current_order_items)
+    city_change = build_city_change(raw_query, current_order_for_city(request, state))
     if city_change is not None:
         return {
             **base,
@@ -54,7 +56,7 @@ def build_modify_intent(
             "city_change": city_change,
             "clarification": None,
             "unsupported_reasons": [],
-            "routing_hint": _city_change_routing_hint(city_change),
+            "routing_hint": city_change_routing_hint(city_change),
             "audit": {"parser": "rule_v2"},
         }
     if not current_order_items:
@@ -176,45 +178,6 @@ def _unsupported_reason(raw_query: str) -> str | None:
     if any(keyword in raw_query for keyword in ("예약", "예매", "결제")):
         return "reservation_or_booking"
     return None
-
-
-def _city_change(
-    raw_query: str,
-    current_order: tuple[Mapping[str, Any], ...],
-) -> dict[str, Any] | None:
-    if "도시" not in raw_query and "지역" not in raw_query:
-        return None
-    if not any(keyword in raw_query for keyword in ("바꿔", "변경", "교체")):
-        return None
-    if "다른" in raw_query:
-        return {
-            "target_city_id": None,
-            "target_city_name": None,
-            "city_preference_query": raw_query,
-            "carry_over_themes": True,
-            "carry_over_festivals": True,
-            "avoid_city_ids": avoid_city_ids(current_order),
-        }
-    city_map = load_default_city_identity_map()
-    identity = find_city_identity_in_text(city_map, raw_query)
-    if identity is not None:
-        return {
-            "target_city_id": identity.city_id,
-            "target_city_name": identity.city_name_ko,
-            "city_preference_query": raw_query,
-            "carry_over_themes": True,
-            "carry_over_festivals": True,
-            "avoid_city_ids": avoid_city_ids(current_order),
-        }
-    return None
-
-
-def _city_change_routing_hint(city_change: Mapping[str, Any]) -> str:
-    return (
-        "planner_direct_anchor"
-        if _optional_text(city_change.get("target_city_id")) is not None
-        else "city_select_rediscovery"
-    )
 
 
 def _clarification_result(

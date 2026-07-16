@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from lovv_agent_v2.agents.intent.modify_current_order import current_order
+from lovv_agent_v2.agents.intent.modify_prompt_normalizer import normalize_prompt_edit_ops
 from lovv_agent_v2.agents.intent.node import intent_node
 
 
@@ -139,3 +141,76 @@ def test_place_modify_after_city_change_uses_front_current_order() -> None:
     assert modify_intent["kind"] == "slot_replace"
     assert modify_intent["city_change"] is None
     assert modify_intent["edit_ops"][0]["target"]["content_id"] == "attraction#front-gangneung"
+
+
+def test_explicit_invalid_current_order_does_not_use_stale_checkpoint() -> None:
+    output = intent_node(
+        {
+            "request": {
+                "entryType": "modify",
+                "threadId": "thread-invalid-order",
+                "itineraryRevision": "rev-invalid-order",
+                "rawModifyQuery": "1일차 첫 번째 장소를 바꿔줘.",
+                "currentOrder": [{}],
+            },
+            "planner": {
+                "planner_output": {
+                    "itinerary": [
+                        {
+                            "day": 1,
+                            "order": 1,
+                            "placeId": "attraction#stale",
+                            "title": "상태의 이전 장소",
+                            "city_id": "KR-51-150",
+                            "theme_tags": ["자연·트레킹"],
+                        },
+                    ],
+                },
+            },
+        },
+    )
+
+    modify_intent = output["intent"]["modify_intent"]
+    assert modify_intent["status"] == "needs_clarification"
+    assert modify_intent["reason_code"] == "modify_missing_current_itinerary"
+
+
+def test_explicit_empty_current_order_uses_checkpoint_fallback() -> None:
+    result = current_order(
+        {"currentOrder": []},
+        {
+            "planner": {
+                "planner_output": {
+                    "itinerary": [
+                        {
+                            "placeId": "attraction#checkpoint",
+                            "day": 1,
+                            "order": 1,
+                            "city_id": "KR-47-770",
+                        },
+                    ],
+                },
+            },
+        },
+    )
+
+    assert result[0]["contentId"] == "attraction#checkpoint"
+
+
+def test_place_id_alias_is_canonicalized_before_prompt_target_resolution() -> None:
+    operations = normalize_prompt_edit_ops(
+        [{"target": {"target_day": 1, "target_order": 1}}],
+        {
+            "rawModifyQuery": "1일차 첫 번째 장소를 바꿔줘.",
+            "currentOrder": [
+                {
+                    "itemId": "item-alias",
+                    "placeId": "attraction#alias",
+                    "day": 1,
+                    "order": 1,
+                },
+            ],
+        },
+    )
+
+    assert operations[0]["target"]["content_id"] == "attraction#alias"

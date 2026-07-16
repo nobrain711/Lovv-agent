@@ -91,7 +91,17 @@ def _previous_items(
     previous_output: Mapping[str, Any],
     full_order: Sequence[Mapping[str, Any]],
 ) -> tuple[Mapping[str, Any], ...]:
-    items = tuple(
+    request_items = tuple(
+        item
+        for item in sorted(
+            full_order,
+            key=lambda value: (_int(value.get("day")), _int(value.get("order"))),
+        )
+        if isinstance(item, Mapping)
+    )
+    if request_items:
+        return request_items
+    return tuple(
         item
         for item in sorted(
             previous_output.get("itinerary", ()),
@@ -99,19 +109,12 @@ def _previous_items(
         )
         if isinstance(item, Mapping)
     )
-    if items:
-        return items
-    return tuple(
-        item
-        for item in sorted(full_order, key=lambda value: (_int(value.get("day")), _int(value.get("order"))))
-        if isinstance(item, Mapping)
-    )
 
 
 def _memory_update(state: Mapping[str, Any], targets: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     memory = dict(_mapping(state.get("memory")))
     history = dict(_mapping(memory.get("modify_history")))
-    values = list(history.get("replaced_content_ids", ()))
+    values: list[str] = list(history.get("replaced_content_ids", ()))
     for target in targets:
         content_id = _optional_text(target.get("contentId", target.get("content_id")))
         if content_id is not None and content_id not in values:

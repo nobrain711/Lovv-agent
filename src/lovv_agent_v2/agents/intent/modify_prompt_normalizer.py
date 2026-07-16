@@ -6,9 +6,12 @@ from typing import Any
 from lovv_agent_v2.agents.intent.modify_replacement_query import (
     replacement_query_fields,
 )
+from lovv_agent_v2.agents.intent.modify_current_order import (
+    current_order,
+    current_order_for_city,
+)
 from lovv_agent_v2.agents.intent.modify_slots import (
     avoid_city_ids,
-    current_order,
     public_operation,
     slot_replace_operations,
 )
@@ -61,7 +64,7 @@ def normalize_prompt_city_change(
         "city_preference_query": raw_query,
         "carry_over_themes": True,
         "carry_over_festivals": True,
-        "avoid_city_ids": avoid_city_ids(current_order(request, {})),
+        "avoid_city_ids": avoid_city_ids(current_order_for_city(request, {})),
     }
 
 
@@ -84,7 +87,7 @@ def _targetless_city_change(raw_query: str | None, request: Mapping[str, Any]) -
         "city_preference_query": raw_query,
         "carry_over_themes": True,
         "carry_over_festivals": True,
-        "avoid_city_ids": avoid_city_ids(current_order(request, {})),
+        "avoid_city_ids": avoid_city_ids(current_order_for_city(request, {})),
     }
 
 

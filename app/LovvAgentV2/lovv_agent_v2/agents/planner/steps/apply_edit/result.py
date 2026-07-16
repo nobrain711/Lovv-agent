@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from lovv_agent_v2.agents.planner.domain.place_model import PlannerPlace
+from lovv_agent_v2.agents.planner.steps.apply_edit.current_order_snapshot import merge_current_order_item
 from lovv_agent_v2.agents.planner.steps.apply_edit.explanation_scope import (
     EXPLANATION_MARKERS,
     explanation_place_ids,
@@ -143,8 +144,8 @@ def _existing_itinerary_item(
 ) -> dict[str, Any]:
     content_id = _optional_text(item.get("contentId", item.get("content_id")))
     previous = _previous_item(previous_output, content_id)
-    if previous is not None:
-        return {**previous, "day": item.get("day"), "order": item.get("order")}
+    if previous is not None and content_id is not None:
+        return merge_current_order_item(previous, item, content_id)
     theme = item.get("theme")
     return {
         "day": item.get("day"),
